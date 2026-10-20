@@ -1,0 +1,292 @@
+/**
+ * 超市商品管理系统 · 全局设计令牌与基础样式
+ * 设计规范详见项目根目录 design.md
+ * 颜色 / 字号 / 圆角 / 阴影 / 动效曲线全部以 CSS 变量统一管理，禁止在业务页面硬编码
+ */
+
+/* ========== 设计令牌（Design Tokens） ========== */
+:root {
+  /* ---- 品牌主色：鲜活翡翠绿（呼应超市生鲜行业属性，克制不刺眼） ---- */
+  --brand-primary: #0a855e;
+  --brand-primary-hover: #0c9a6e;
+  --brand-primary-active: #086a4b;
+  --brand-primary-light-3: #53aa8e;
+  --brand-primary-light-5: #85c2af;
+  --brand-primary-light-7: #b5dace;
+  --brand-primary-light-9: #e6f3ef;
+
+  /* ---- 功能色（低饱和，用于状态提示） ---- */
+  --color-success: #2f9e6e;
+  --color-warning: #d98a2b;
+  --color-danger: #dc5a4e;
+  --color-info: #8492a6;
+
+  /* ---- 图表分类色板（低饱和水果色系，仅用于图表分类，禁止用于按钮/文字/状态提示） ---- */
+  --chart-1: #0a855e; /* 翡翠绿 · 饮料乳品 */
+  --chart-2: #d98a2b; /* 橙子橙 · 休闲零食 */
+  --chart-3: #dc5a4e; /* 草莓红 · 粮油调味 */
+  --chart-4: #4080b8; /* 蓝莓蓝 · 日用百货 */
+  --chart-5: #9966bb; /* 葡萄紫 · 生鲜果蔬 */
+  --chart-6: #e6a86e; /* 桃子浅橙（扩展预留） */
+  --chart-7: #73b864; /* 猕猴桃浅绿（扩展预留） */
+  --chart-8: #f59e0b; /* 香蕉黄（扩展预留） */
+
+  /* ---- 中性色（冷灰体系，全项目唯一灰调色板） ---- */
+  --text-primary: #1c2430; /* 主要文字：标题 */
+  --text-regular: #4d5a6b; /* 常规文字：正文 */
+  --text-secondary: #8492a6; /* 次要文字：说明、占位 */
+  --text-disabled: #b3bdca; /* 禁用文字 */
+
+  --bg-page: #f4f6f9; /* 内容区底色 */
+  --bg-card: #ffffff; /* 卡片 / 容器底色 */
+  --bg-muted: #f7f9fb; /* 浅灰填充：表头、hover 行 */
+  --border-color: #e6eaf0; /* 常规描边 */
+  --border-light: #eef1f5; /* 更浅分割线 */
+
+  /* ---- 深色侧边栏（墨青色调，非纯黑） ---- */
+  --sidebar-bg: #0f1623;
+  --sidebar-bg-deep: #0b111c;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-text: #93a0b7;
+  --sidebar-text-hover: #ffffff;
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.055);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.09);
+
+  /* ---- 登录页背景（品牌区墨青→深翠对角渐变 + 右侧浅色渐变，仅登录页使用） ---- */
+  --login-brand-ink: #0c1524; /* 左上：深墨蓝青 */
+  --login-brand-teal: #0d1e28; /* 中段：墨青泛翠 */
+  --login-brand-emerald-deep: #0b2420; /* 中下：深翠 */
+  --login-brand-emerald: #0a2b22; /* 右下：翡翠深调 */
+  --login-brand-cyan: rgba(64, 145, 152, 0.2); /* 右上：冷青氛围光 */
+  --login-side-bg-top: #f8fafc; /* 右侧浅色区顶部 */
+  --login-side-bg-bottom: #edf1f7; /* 右侧浅色区底部 */
+
+  /* ---- 圆角（形状一致性：控件 8 / 卡片 12 / 胶囊全圆） ---- */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+
+  /* ---- 阴影（带冷色调染色，禁止纯黑投影） ---- */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0 2px 8px -2px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 12px 28px -10px rgba(16, 24, 40, 0.16), 0 4px 10px -4px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 24px 48px -16px rgba(16, 24, 40, 0.22);
+
+  /* ---- 布局尺寸 ---- */
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 64px;
+  --header-height: 60px;
+
+  /* ---- 动效（时长 + 缓动曲线，仅作用于 transform / opacity / 布局属性） ---- */
+  --motion-fast: 0.18s;
+  --motion-base: 0.25s;
+  --motion-slow: 0.32s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* 通用进出 */
+  --ease-decel: cubic-bezier(0.16, 1, 0.3, 1); /* 元素入场减速 */
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1); /* 小元素回弹（箭头、开关） */
+
+  /* ---- 层级刻度（z-index 只允许取以下值） ---- */
+  --z-layout: 100;
+  --z-header: 101;
+  --z-dropdown: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+}
+
+/* ========== 覆盖 Element Plus 主题变量 ========== */
+:root {
+  --el-color-primary: var(--brand-primary);
+  --el-color-primary-light-3: var(--brand-primary-light-3);
+  --el-color-primary-light-5: var(--brand-primary-light-5);
+  --el-color-primary-light-7: var(--brand-primary-light-7);
+  --el-color-primary-light-9: var(--brand-primary-light-9);
+  --el-color-primary-dark-2: var(--brand-primary-active);
+
+  --el-color-success: var(--color-success);
+  --el-color-warning: var(--color-warning);
+  --el-color-danger: var(--color-danger);
+  --el-color-info: var(--color-info);
+
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-regular);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-secondary);
+  --el-border-color: var(--border-color);
+  --el-border-color-light: var(--border-light);
+  --el-border-color-lighter: var(--border-light);
+  --el-border-radius-base: var(--radius-control);
+  --el-border-radius-small: 6px;
+  --el-font-size-base: 14px;
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-fill-color-blank: var(--bg-card);
+  --el-fill-color-light: var(--bg-muted);
+  --el-table-header-bg-color: var(--bg-muted);
+  --el-table-header-text-color: var(--text-regular);
+}
+
+/* ========== 基础重置 ========== */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 数据数字使用等宽数字，表格 / 统计场景对齐更整齐 */
+.num,
+.is-number {
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ========== 滚动条（细窄克制风格） ========== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(132, 146, 166, 0.35);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(132, 146, 166, 0.55);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 深色区域内的滚动条 */
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ========== 路由页面过渡（下沉 8px + 淡入，仅 transform/opacity） ========== */
+.page-fade-enter-active {
+  transition:
+    opacity var(--motion-slow) var(--ease-decel),
+    transform var(--motion-slow) var(--ease-decel);
+}
+.page-fade-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* ========== 通用工具类 ========== */
+
+/* 页面内容卡片：后续业务页面统一使用 */
+.page-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-xs);
+  border: 1px solid var(--border-light);
+}
+
+/* 触感反馈：点击下沉 1px，模拟物理按压 */
+.tactile:active {
+  transform: translateY(1px);
+}
+
+/* 尊重系统"减少动态效果"设置：循环动画默认收敛为单次播放、过渡即时化；
+   ≤1.2s 的一次性入场动画保留播放。
+   例外：登录页已登记的低频装饰循环（design.md 7.2-8：光晕呼吸 9s / 粒子 7–16s / 在线点 ping 2.6s）
+   与功能性加载指示保留循环 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .brand-glow,
+  .particle,
+  .sys-status.is-online .sys-dot::after,
+  .el-loading-spinner svg,
+  .el-loading-spinner .path,
+  .el-icon.is-loading {
+    animation-iteration-count: infinite !important;
+  }
+}
+
+
+
+/* ==================== 全局响应式断点 ==================== */
+/* 三档断点：992（小屏折叠）/ 768（超小屏收窄）/ 480（极小屏堆叠） */
+
+/* 中屏：992px ≤ 宽度 < 1200px，内容区内边距收窄 */
+@media (max-width: 1199px) {
+  .app-main {
+    padding: 16px;
+  }
+}
+
+/* 小屏：768px ≤ 宽度 < 992px，侧边栏自动折叠为窄栏，内容区进一步收窄 */
+@media (max-width: 991px) {
+  .app-main {
+    padding: 12px;
+  }
+}
+
+/* 超小屏：宽度 < 768px，内容区占满宽度，卡片内边距缩小 */
+@media (max-width: 767px) {
+  .app-main {
+    padding: 8px;
+  }
+  .page-card {
+    border-radius: 10px;
+  }
+}
+
+/* ---- 弹窗宽度自适应（最大不超过窗口 90%） ---- */
+@media (max-width: 767px) {
+  .el-dialog {
+    width: 92% !important;
+    margin: 16px auto !important;
+  }
+}
+
+/* ---- 分页组件小屏精简 ---- */
+@media (max-width: 767px) {
+  .el-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+  }
+  .el-pagination .el-pagination__sizes,
+  .el-pagination .el-pagination__jump {
+    margin: 0;
+  }
+}
+
