@@ -23,7 +23,7 @@
 
 ```
 超市后端管理系统
-├── 前端/                # Vue 3 前端项目（Vite 构建）
+├── frontend/            # Vue 3 前端项目（Vite 构建）
 │   └── src/
 │       ├── api/         # 接口封装
 │       ├── components/  # 公共组件
@@ -32,15 +32,14 @@
 │       ├── store/       # Pinia 状态管理
 │       ├── views/       # 业务页面（dashboard / product / stock / sale / supplier / system / login）
 │       └── utils/       # 工具函数
-└── 后端/
-    └── express demo/    # Express 后端服务
-        ├── config/      # 数据库连接配置
-        ├── routers/     # 路由层
-        ├── controllers/ # 控制层（业务逻辑）
-        ├── models/      # 数据访问层
-        ├── middleware/  # JWT 鉴权、统一错误处理
-        ├── db/          # 建库建表与初始化脚本（init.js、schema.sql、seed.sql）
-        └── utils/       # 统一响应、参数校验、角色工具
+└── backend/             # Express 后端服务
+    ├── config/          # 数据库连接配置
+    ├── routers/         # 路由层
+    ├── controllers/     # 控制层（业务逻辑）
+    ├── models/          # 数据访问层
+    ├── middleware/      # JWT 鉴权、统一错误处理
+    ├── db/              # 建库建表与初始化脚本（init.js、schema.sql、seed.sql）
+    └── utils/           # 统一响应、参数校验、角色工具
 ```
 
 ## 快速开始
@@ -53,7 +52,7 @@
 ### 2. 启动后端
 
 ```bash
-cd 后端/express demo
+cd backend
 npm install
 # 复制环境变量模板并填入数据库连接信息、JWT密钥
 copy .env.example .env
@@ -66,7 +65,7 @@ npm run dev
 ### 3. 启动前端
 
 ```bash
-cd 前端
+cd frontend
 npm install
 npm run dev
 ```
@@ -75,6 +74,6 @@ npm run dev
 
 ## 相关文档
 
-- [前端接口对接文档](./前端/前端接口对接文档.md)
-- [后端接口文档](./后端/express%20demo/api.md)
-- [Apifox 开放接口定义](./后端/express%20demo/apifox-openapi.json)
+- [前端接口对接文档](./frontend/前端接口对接文档.md)
+- [后端接口文档](./backend/api.md)
+- [Apifox 开放接口定义](./backend/apifox-openapi.json)
