@@ -1,0 +1,2030 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "超市管家商品管理后台 · 后端接口",
+    "version": "1.0.0",
+    "description": "Node.js + Express + MySQL 后端接口。\n\n**全局约定**\n- 接口统一前缀 `/api`，完整地址 `http://localhost:3000/api/xxx`\n- 统一响应体 `{ code, msg, data }`，`code=200` 成功，`401` 登录失效，其余非 200 为业务失败\n- 除「用户登录」与「健康检查」外，均需请求头 `Authorization: Bearer <token>`\n- 分页入参 `pageNum`（默认 1）、`pageSize`（默认 10，上限 200）；分页返回 `{ list, total, pageNum, pageSize }`\n- 时间格式 `YYYY-MM-DD HH:mm:ss`，日期格式 `YYYY-MM-DD`\n\n**导入 Apifox 后建议做两步**\n1. 环境变量 `baseUrl = http://localhost:3000`（本文件已内置 server，可直接用）\n2. 打开「用户登录」接口 → 后置操作 → 提取变量：`token` = `$.data.token`，类型选「环境变量」。这样后续接口自动带 token。",
+    "contact": {
+      "name": "超市管家项目组"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "本地开发环境（接口路径已含 /api 前缀）"
+    }
+  ],
+  "tags": [
+    { "name": "系统", "description": "健康检查" },
+    { "name": "用户模块", "description": "登录、个人中心、用户管理（用户管理仅管理员）" },
+    { "name": "分类模块", "description": "商品分类，增删改仅管理员" },
+    { "name": "商品模块", "description": "商品档案，增删改仅管理员" },
+    { "name": "供应商模块", "description": "供应商，增删改仅管理员" },
+    { "name": "库存模块", "description": "出入库、流水、预警、统计，管理员与操作员均可" },
+    { "name": "销售模块", "description": "收银结账（均可）、退货与作废（仅管理员）、统计" },
+    { "name": "仪表盘模块", "description": "运营总览，只读统计" }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "健康检查",
+        "description": "探测服务与数据库连通性，无需 token。",
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/HealthResult" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/user/login": {
+      "post": {
+        "tags": ["用户模块"],
+        "summary": "用户登录",
+        "description": "公开接口。成功返回 token 及角色信息。前端将 `position`（中文职位）存入 roleName 用于菜单过滤，后端鉴权用 `role`。",
+        "operationId": "userLogin",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": { "type": "string", "description": "登录账号", "example": "admin" },
+                  "password": { "type": "string", "description": "登录密码", "example": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/LoginResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" }
+        }
+      }
+    },
+
+    "/api/user/logout": {
+      "post": {
+        "tags": ["用户模块"],
+        "summary": "退出登录",
+        "operationId": "userLogout",
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/user/info": {
+      "get": {
+        "tags": ["用户模块"],
+        "summary": "获取当前用户信息",
+        "description": "从 token 解析当前登录用户。",
+        "operationId": "userInfo",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/user/password": {
+      "post": {
+        "tags": ["用户模块"],
+        "summary": "修改密码（本人）",
+        "operationId": "userChangePassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["oldPassword", "newPassword"],
+                "properties": {
+                  "oldPassword": { "type": "string", "example": "123456" },
+                  "newPassword": { "type": "string", "description": "长度至少 6 位，且不能与当前密码相同", "example": "admin123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/user/profile": {
+      "put": {
+        "tags": ["用户模块"],
+        "summary": "更新个人资料（个人中心）",
+        "description": "敏感字段（salary / joinDate / position / role）不允许通过本接口修改，后端忽略。",
+        "operationId": "userUpdateProfile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "avatar": { "type": "string", "description": "头像 URL" },
+                  "realName": { "type": "string", "example": "系统管理员" },
+                  "gender": { "type": "string", "enum": ["男", "女"] },
+                  "birthday": { "type": "string", "format": "date", "example": "1990-01-01" },
+                  "phone": { "type": "string", "example": "13900000001" },
+                  "idCard": { "type": "string", "example": "330100199001011234" },
+                  "address": { "type": "string", "example": "浙江省杭州市西湖区" },
+                  "remark": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/user/list": {
+      "get": {
+        "tags": ["用户模块"],
+        "summary": "用户分页列表（仅管理员）",
+        "description": "返回结果不含 password 字段，按 createTime 倒序。",
+        "operationId": "userList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "name": "username", "in": "query", "required": false, "schema": { "type": "string" }, "description": "登录账号（模糊）" },
+          { "name": "position", "in": "query", "required": false, "schema": { "type": "string" }, "description": "职位（精确），如 管理员 / 仓管 / 收银员 / 后勤 / 采购 / 会计" },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1, 0] }, "description": "1 启用 / 0 禁用" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageUser" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/user": {
+      "post": {
+        "tags": ["用户模块"],
+        "summary": "新增用户（仅管理员）",
+        "description": "role 不由前端传，后端按 position 自动映射（管理员→admin，其余→operator）。初始密码默认 123456。",
+        "operationId": "userCreate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "realName", "position"],
+                "properties": {
+                  "username": { "type": "string", "description": "3-20 位字母/数字/下划线", "example": "zhaoliu" },
+                  "realName": { "type": "string", "example": "赵六" },
+                  "position": { "type": "string", "description": "中文职位，决定 role", "example": "收银员" },
+                  "avatar": { "type": "string" },
+                  "idCard": { "type": "string", "example": "330100199707077890" },
+                  "phone": { "type": "string", "example": "13900000007" },
+                  "address": { "type": "string" },
+                  "gender": { "type": "string", "enum": ["男", "女"] },
+                  "birthday": { "type": "string", "format": "date", "example": "1997-07-07" },
+                  "joinDate": { "type": "string", "format": "date", "example": "2025-01-01" },
+                  "salary": { "type": "number", "example": 5500 },
+                  "remark": { "type": "string" },
+                  "status": { "type": "integer", "enum": [1, 0], "default": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["用户模块"],
+        "summary": "编辑用户（仅管理员）",
+        "description": "username 不可修改（后端忽略）；role 随 position 重新映射。",
+        "operationId": "userUpdate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                  "id": { "type": "integer", "example": 7 },
+                  "realName": { "type": "string", "example": "赵六" },
+                  "position": { "type": "string", "example": "后勤" },
+                  "avatar": { "type": "string" },
+                  "idCard": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" },
+                  "gender": { "type": "string", "enum": ["男", "女"] },
+                  "birthday": { "type": "string", "format": "date" },
+                  "joinDate": { "type": "string", "format": "date" },
+                  "salary": { "type": "number" },
+                  "remark": { "type": "string" },
+                  "status": { "type": "integer", "enum": [1, 0] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/user/{id}": {
+      "delete": {
+        "tags": ["用户模块"],
+        "summary": "删除用户（仅管理员）",
+        "description": "禁止删除自己，禁止删除系统内置管理员 admin。",
+        "operationId": "userDelete",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 7 }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/user/reset-password": {
+      "post": {
+        "tags": ["用户模块"],
+        "summary": "重置用户密码（仅管理员）",
+        "operationId": "userResetPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id", "newPassword"],
+                "properties": {
+                  "id": { "type": "integer", "example": 7 },
+                  "newPassword": { "type": "string", "description": "长度至少 6 位", "example": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/category/list": {
+      "get": {
+        "tags": ["分类模块"],
+        "summary": "分类列表（全量，不分页）",
+        "description": "按 sort 升序返回。",
+        "operationId": "categoryList",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Category" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/category": {
+      "post": {
+        "tags": ["分类模块"],
+        "summary": "新增分类（仅管理员）",
+        "operationId": "categoryCreate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "example": "母婴用品" },
+                  "colorToken": { "type": "string", "example": "var(--chart-6)" },
+                  "description": { "type": "string", "example": "奶粉、纸尿裤等" },
+                  "sort": { "type": "integer", "example": 6 },
+                  "status": { "type": "integer", "enum": [1, 0], "default": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["分类模块"],
+        "summary": "编辑分类（仅管理员）",
+        "operationId": "categoryUpdate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id", "name"],
+                "properties": {
+                  "id": { "type": "integer", "example": 6 },
+                  "name": { "type": "string", "example": "母婴用品" },
+                  "colorToken": { "type": "string" },
+                  "description": { "type": "string" },
+                  "sort": { "type": "integer" },
+                  "status": { "type": "integer", "enum": [1, 0] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/category/{id}": {
+      "delete": {
+        "tags": ["分类模块"],
+        "summary": "删除分类（仅管理员）",
+        "description": "分类下存在商品时不允许删除。",
+        "operationId": "categoryDelete",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 6 }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/product/list": {
+      "get": {
+        "tags": ["商品模块"],
+        "summary": "商品分页列表",
+        "description": "JOIN 返回 categoryName、supplierName。",
+        "operationId": "productList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "name": "productName", "in": "query", "required": false, "schema": { "type": "string" }, "description": "商品名称（模糊）" },
+          { "name": "productCode", "in": "query", "required": false, "schema": { "type": "string" }, "description": "商品条码（模糊）" },
+          { "name": "categoryId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "分类 id（精确）" },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1, 0] }, "description": "1 在售 / 0 下架" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageProduct" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/product/options": {
+      "get": {
+        "tags": ["商品模块"],
+        "summary": "在售商品下拉选项",
+        "description": "收银开单选品用，仅返回在售商品。",
+        "operationId": "productOptions",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/ProductOption" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/product": {
+      "post": {
+        "tags": ["商品模块"],
+        "summary": "新增商品（仅管理员）",
+        "description": "条码为空时后端自动生成（690 + 10 位序号）；库存为 0 时自动置 status=0。",
+        "operationId": "productCreate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productName", "categoryId", "salePrice"],
+                "properties": {
+                  "productCode": { "type": "string", "description": "留空则自动生成", "example": "6900000000017" },
+                  "productName": { "type": "string", "example": "农夫山泉 550ml" },
+                  "categoryId": { "type": "integer", "format": "int64", "example": 1 },
+                  "spec": { "type": "string", "example": "550ml" },
+                  "unit": { "type": "string", "default": "个", "example": "瓶" },
+                  "costPrice": { "type": "number", "description": "不能为负", "example": 1.2 },
+                  "salePrice": { "type": "number", "description": "必须大于 0", "example": 2 },
+                  "stockNum": { "type": "integer", "description": "不能为负", "example": 100 },
+                  "warnNum": { "type": "integer", "example": 10 },
+                  "supplierId": { "type": "integer", "format": "int64", "nullable": true, "example": 1 },
+                  "imageUrl": { "type": "string" },
+                  "status": { "type": "integer", "enum": [1, 0], "default": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["商品模块"],
+        "summary": "编辑商品（仅管理员）",
+        "description": "条码留空则保留原条码。",
+        "operationId": "productUpdate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id", "productName", "categoryId", "salePrice"],
+                "properties": {
+                  "id": { "type": "integer", "format": "int64", "example": 1 },
+                  "productCode": { "type": "string" },
+                  "productName": { "type": "string", "example": "农夫山泉 550ml" },
+                  "categoryId": { "type": "integer", "format": "int64", "example": 1 },
+                  "spec": { "type": "string" },
+                  "unit": { "type": "string" },
+                  "costPrice": { "type": "number" },
+                  "salePrice": { "type": "number" },
+                  "stockNum": { "type": "integer" },
+                  "warnNum": { "type": "integer" },
+                  "supplierId": { "type": "integer", "format": "int64", "nullable": true },
+                  "imageUrl": { "type": "string" },
+                  "status": { "type": "integer", "enum": [1, 0] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/product/{id}": {
+      "get": {
+        "tags": ["商品模块"],
+        "summary": "商品详情",
+        "operationId": "productDetail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 1 }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/Product" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["商品模块"],
+        "summary": "删除商品（仅管理员）",
+        "description": "商品存在流水或销售明细记录时不允许删除。",
+        "operationId": "productDelete",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 17 }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/supplier/list": {
+      "get": {
+        "tags": ["供应商模块"],
+        "summary": "供应商分页列表",
+        "operationId": "supplierList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "name": "supplierName", "in": "query", "required": false, "schema": { "type": "string" }, "description": "供应商名称（模糊）" },
+          { "name": "contactPerson", "in": "query", "required": false, "schema": { "type": "string" }, "description": "联系人（模糊）" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageSupplier" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/supplier/options": {
+      "get": {
+        "tags": ["供应商模块"],
+        "summary": "供应商下拉选项",
+        "description": "供入库单/商品选择供应商用，仅返回 id 与名称。",
+        "operationId": "supplierOptions",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/SupplierOptionList" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/supplier": {
+      "post": {
+        "tags": ["供应商模块"],
+        "summary": "新增供应商（仅管理员）",
+        "operationId": "supplierCreate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["supplierName"],
+                "properties": {
+                  "supplierName": { "type": "string", "example": "统一企业" },
+                  "contactPerson": { "type": "string", "example": "陈经理" },
+                  "phone": { "type": "string", "example": "13800000008" },
+                  "address": { "type": "string", "example": "上海市" },
+                  "remark": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["供应商模块"],
+        "summary": "编辑供应商（仅管理员）",
+        "operationId": "supplierUpdate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["id", "supplierName"],
+                "properties": {
+                  "id": { "type": "integer", "format": "int64", "example": 6 },
+                  "supplierName": { "type": "string", "example": "统一企业" },
+                  "contactPerson": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "address": { "type": "string" },
+                  "remark": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/supplier/{id}": {
+      "delete": {
+        "tags": ["供应商模块"],
+        "summary": "删除供应商（仅管理员）",
+        "description": "供应商被商品引用时不允许删除。",
+        "operationId": "supplierDelete",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 6 }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/stock/inbound/list": {
+      "get": {
+        "tags": ["库存模块"],
+        "summary": "入库明细分页列表",
+        "description": "仅返回 changeType=1 的记录，按 createTime 倒序。",
+        "operationId": "stockInboundList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/ProductNameQuery" },
+          { "$ref": "#/components/parameters/ProductIdQuery" },
+          { "$ref": "#/components/parameters/StartTimeQuery" },
+          { "$ref": "#/components/parameters/EndTimeQuery" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageStockLog" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/inbound": {
+      "post": {
+        "tags": ["库存模块"],
+        "summary": "提交入库",
+        "description": "事务内执行：更新库存 + 写流水。原为缺货下架的商品，入库后自动上架。操作人从 token 解析，不接受前端传值。",
+        "operationId": "stockInbound",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity"],
+                "properties": {
+                  "productId": { "type": "integer", "format": "int64", "example": 1 },
+                  "supplierId": { "type": "integer", "format": "int64", "nullable": true, "description": "传了则回填流水的 supplierName", "example": 1 },
+                  "quantity": { "type": "integer", "description": "必须大于 0", "example": 100 },
+                  "inboundPrice": { "type": "number", "nullable": true, "description": "入库单价，不能为负", "example": 1.2 },
+                  "remark": { "type": "string", "example": "补货" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/outbound/list": {
+      "get": {
+        "tags": ["库存模块"],
+        "summary": "出库明细分页列表",
+        "description": "仅返回 changeType=2 的记录，按 createTime 倒序。",
+        "operationId": "stockOutboundList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/ProductNameQuery" },
+          { "$ref": "#/components/parameters/ProductIdQuery" },
+          { "$ref": "#/components/parameters/StartTimeQuery" },
+          { "$ref": "#/components/parameters/EndTimeQuery" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageStockLog" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/outbound": {
+      "post": {
+        "tags": ["库存模块"],
+        "summary": "提交出库",
+        "description": "事务内执行。库存不足时抛错回滚，不产生任何数据变更。",
+        "operationId": "stockOutbound",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["productId", "quantity"],
+                "properties": {
+                  "productId": { "type": "integer", "format": "int64", "example": 3 },
+                  "quantity": { "type": "integer", "description": "必须大于 0", "example": 10 },
+                  "remark": { "type": "string", "example": "报损出库" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/IdResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/warn/list": {
+      "get": {
+        "tags": ["库存模块"],
+        "summary": "预警商品列表",
+        "description": "stockNum<=0 → warnStatus=2（已缺货）；0<stockNum<warnNum → warnStatus=1（低于预警值）。按 stockNum 升序（缺货在前）。不分页。",
+        "operationId": "stockWarnList",
+        "parameters": [
+          { "$ref": "#/components/parameters/ProductNameQuery" },
+          { "name": "warnStatus", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1, 2] }, "description": "1 低于预警值 / 2 已缺货" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/WarnProduct" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/log/list": {
+      "get": {
+        "tags": ["库存模块"],
+        "summary": "出入库流水分页列表",
+        "description": "按 createTime 倒序。productId 可用于商品详情抽屉查单个商品的流水。",
+        "operationId": "stockLogList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "$ref": "#/components/parameters/ProductNameQuery" },
+          { "$ref": "#/components/parameters/ProductIdQuery" },
+          { "name": "changeType", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1, 2] }, "description": "1 入库 / 2 出库" },
+          { "$ref": "#/components/parameters/StartTimeQuery" },
+          { "$ref": "#/components/parameters/EndTimeQuery" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageStockLog" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/stock/statistics": {
+      "get": {
+        "tags": ["库存模块"],
+        "summary": "库存统计",
+        "operationId": "stockStatistics",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/StockStatistics" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/sale/record/list": {
+      "get": {
+        "tags": ["销售模块"],
+        "summary": "销售记录分页列表",
+        "description": "不含明细 items（明细走详情接口），按 createTime 倒序。",
+        "operationId": "saleRecordList",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" },
+          { "name": "saleNo", "in": "query", "required": false, "schema": { "type": "string" }, "description": "单据编号（模糊）" },
+          { "name": "operator", "in": "query", "required": false, "schema": { "type": "string" }, "description": "收银员（精确）" },
+          { "name": "payType", "in": "query", "required": false, "schema": { "type": "integer", "enum": [1, 2, 3, 4] }, "description": "1 现金 / 2 微信 / 3 支付宝 / 4 会员卡" },
+          { "$ref": "#/components/parameters/StartTimeQuery" },
+          { "$ref": "#/components/parameters/EndTimeQuery" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageSaleRecord" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/sale/record": {
+      "post": {
+        "tags": ["销售模块"],
+        "summary": "提交销售（收银结账）",
+        "description": "事务内完成：校验在售与库存 → 生成单号 → 写主单与明细（含商品名/分类名/成本价冗余快照）→ 逐项扣库存 → 写 changeType=2 出库流水。任一商品库存不足则整单回滚。\n单号规则：XS + yyyymmdd + '-' + 3 位当日序号。",
+        "operationId": "saleSubmit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "销售商品列表，不能为空",
+                    "items": {
+                      "type": "object",
+                      "required": ["productId", "quantity"],
+                      "properties": {
+                        "productId": { "type": "integer", "format": "int64", "example": 1 },
+                        "quantity": { "type": "integer", "description": "必须大于 0", "example": 2 },
+                        "salePrice": { "type": "number", "nullable": true, "description": "不传则取商品当前售价", "example": 2 }
+                      }
+                    }
+                  },
+                  "payType": { "type": "integer", "enum": [1, 2, 3, 4], "default": 1, "description": "1 现金 / 2 微信 / 3 支付宝 / 4 会员卡" },
+                  "remark": { "type": "string" }
+                },
+                "example": {
+                  "items": [
+                    { "productId": 1, "quantity": 2, "salePrice": 2 },
+                    { "productId": 2, "quantity": 1, "salePrice": 3.5 }
+                  ],
+                  "payType": 1,
+                  "remark": ""
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/SaleSubmitResult" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/sale/record/return": {
+      "post": {
+        "tags": ["销售模块"],
+        "summary": "销售退货（整单退款，仅管理员）",
+        "description": "事务内执行：status 置 2 → 逐项回补库存 → 写 changeType=1 入库流水（备注「销售退货」）。库存恢复后原缺货下架的商品自动上架。",
+        "operationId": "saleReturn",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["saleNo"],
+                "properties": {
+                  "saleNo": { "type": "string", "example": "XS20261011-001" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/sale/record/void": {
+      "post": {
+        "tags": ["销售模块"],
+        "summary": "销售作废（仅管理员）",
+        "description": "status 置 3。作废不恢复库存、不生成流水，用于误录冲正。",
+        "operationId": "saleVoid",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["saleNo"],
+                "properties": {
+                  "saleNo": { "type": "string", "example": "XS20261011-001" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/OkNull" },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/sale/record/{id}": {
+      "get": {
+        "tags": ["销售模块"],
+        "summary": "销售记录详情",
+        "description": "含明细 items。",
+        "operationId": "saleRecordDetail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" }, "example": 1001 }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/SaleRecordDetail" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/sale/item/list": {
+      "get": {
+        "tags": ["销售模块"],
+        "summary": "销售明细按商品查询",
+        "description": "商品详情抽屉的「销售历史」展示，按 createTime 倒序。",
+        "operationId": "saleItemList",
+        "parameters": [
+          { "name": "productId", "in": "query", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "商品 id（必填）", "example": 1 },
+          { "$ref": "#/components/parameters/PageNum" },
+          { "$ref": "#/components/parameters/PageSize" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/PageSaleItemRow" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BizError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/sale/statistics": {
+      "get": {
+        "tags": ["销售模块"],
+        "summary": "销售统计（聚合）",
+        "description": "日期区间缺省为近 7 天。仅统计 status=1（正常）的单据，已退货/已作废不计入。dailyTrend 区间内每天补齐，无销售日为 0。",
+        "operationId": "saleStatistics",
+        "parameters": [
+          { "$ref": "#/components/parameters/StartTimeQuery" },
+          { "$ref": "#/components/parameters/EndTimeQuery" },
+          { "name": "categoryId", "in": "query", "required": false, "schema": { "type": "integer", "format": "int64" }, "description": "分类 id（精确）" },
+          { "name": "productName", "in": "query", "required": false, "schema": { "type": "string" }, "description": "商品名称（精确）" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/SaleStatistics" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/dashboard/overview": {
+      "get": {
+        "tags": ["仪表盘模块"],
+        "summary": "运营总览指标",
+        "description": "含今日/本月销售额与利润、环比、迷你趋势线序列（各 8 个采样点）。环比可为负值。",
+        "operationId": "dashboardOverview",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": { "$ref": "#/components/schemas/DashboardOverview" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/dashboard/sale-trend": {
+      "get": {
+        "tags": ["仪表盘模块"],
+        "summary": "近 N 日销售趋势",
+        "operationId": "dashboardSaleTrend",
+        "parameters": [
+          { "name": "days", "in": "query", "required": false, "schema": { "type": "integer", "default": 7, "minimum": 1, "maximum": 90 }, "description": "天数，默认 7，上限 90" }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "description": "按日期升序，date 格式 MM-DD",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": { "type": "string", "example": "10-05" },
+                          "amount": { "type": "number", "example": 6240 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/dashboard/stock-top": {
+      "get": {
+        "tags": ["仪表盘模块"],
+        "summary": "库存余量 TOP5",
+        "operationId": "dashboardStockTop",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StockTopItem" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/dashboard/category-stock": {
+      "get": {
+        "tags": ["仪表盘模块"],
+        "summary": "各分类库存占比",
+        "operationId": "dashboardCategoryStock",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/CategoryStockItem" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+
+    "/api/dashboard/hot-products": {
+      "get": {
+        "tags": ["仪表盘模块"],
+        "summary": "热销商品 TOP5（近 30 天）",
+        "operationId": "dashboardHotProducts",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": { "type": "integer", "example": 200 },
+                    "msg": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/HotProductItem" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    }
+  },
+
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "登录接口返回的 token，格式：Authorization: Bearer <token>"
+      }
+    },
+
+    "parameters": {
+      "PageNum": {
+        "name": "pageNum",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "default": 1, "minimum": 1 },
+        "description": "页码，从 1 开始，默认 1"
+      },
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "default": 10, "minimum": 1, "maximum": 200 },
+        "description": "每页条数，默认 10，上限 200"
+      },
+      "ProductNameQuery": {
+        "name": "productName",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "商品名称（模糊）"
+      },
+      "ProductIdQuery": {
+        "name": "productId",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "format": "int64" },
+        "description": "商品 id（精确）"
+      },
+      "StartTimeQuery": {
+        "name": "startTime",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "example": "2026-10-01" },
+        "description": "开始时间 YYYY-MM-DD，自动补 00:00:00"
+      },
+      "EndTimeQuery": {
+        "name": "endTime",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string", "example": "2026-10-13" },
+        "description": "结束时间 YYYY-MM-DD，自动补 23:59:59"
+      }
+    },
+
+    "responses": {
+      "OkNull": {
+        "description": "成功，data 为 null",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "integer", "example": 200 },
+                "msg": { "type": "string", "example": "success" },
+                "data": { "nullable": true, "example": null }
+              }
+            }
+          }
+        }
+      },
+      "BizError": {
+        "description": "业务校验失败，msg 可直接展示给用户",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "integer", "example": 400 },
+                "msg": { "type": "string", "example": "出库数量大于当前库存" },
+                "data": { "nullable": true, "example": null }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "登录已失效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "integer", "example": 401 },
+                "msg": { "type": "string", "example": "登录已失效，请重新登录" },
+                "data": { "nullable": true, "example": null }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "无权限（需要管理员）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "integer", "example": 403 },
+                "msg": { "type": "string", "example": "无操作权限" },
+                "data": { "nullable": true, "example": null }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "schemas": {
+      "HealthResult": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "ok" },
+          "database": { "type": "string", "example": "connected" }
+        }
+      },
+
+      "IdResult": {
+        "type": "object",
+        "description": "新增类接口返回的新记录主键",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 17 }
+        }
+      },
+
+      "LoginResult": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "JWT 令牌", "example": "eyJhbGciOiJIUzI1NiIs..." },
+          "role": { "type": "string", "enum": ["admin", "operator"], "description": "英文角色，后端鉴权用", "example": "admin" },
+          "position": { "type": "string", "description": "中文职位，前端存为 roleName 用于菜单过滤", "example": "管理员" },
+          "username": { "type": "string", "example": "admin" },
+          "avatar": { "type": "string", "example": "https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png" },
+          "realName": { "type": "string", "example": "系统管理员" }
+        }
+      },
+
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "username": { "type": "string", "example": "admin" },
+          "realName": { "type": "string", "example": "系统管理员" },
+          "role": { "type": "string", "enum": ["admin", "operator"], "example": "admin" },
+          "position": { "type": "string", "example": "管理员" },
+          "avatar": { "type": "string" },
+          "idCard": { "type": "string", "example": "330100199001011234" },
+          "phone": { "type": "string", "example": "13900000001" },
+          "address": { "type": "string", "example": "浙江省杭州市西湖区" },
+          "gender": { "type": "string", "enum": ["男", "女"], "example": "男" },
+          "birthday": { "type": "string", "format": "date", "example": "1990-01-01" },
+          "joinDate": { "type": "string", "format": "date", "example": "2023-06-01" },
+          "salary": { "type": "number", "example": 15000 },
+          "remark": { "type": "string" },
+          "status": { "type": "integer", "enum": [1, 0], "description": "1 启用 / 0 禁用", "example": 1 },
+          "createTime": { "type": "string", "example": "2026-09-01 09:00:00" }
+        }
+      },
+
+      "PageUser": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/User" } },
+          "total": { "type": "integer", "example": 6 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "name": { "type": "string", "example": "饮料乳品" },
+          "colorToken": { "type": "string", "example": "var(--chart-1)" },
+          "description": { "type": "string", "example": "矿泉水、乳制品、碳酸饮料等" },
+          "sort": { "type": "integer", "example": 1 },
+          "status": { "type": "integer", "enum": [1, 0], "example": 1 },
+          "createTime": { "type": "string", "example": "2026-09-01 09:00:00" }
+        }
+      },
+
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "productCode": { "type": "string", "example": "6900000000001" },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "categoryId": { "type": "integer", "format": "int64", "example": 1 },
+          "categoryName": { "type": "string", "description": "JOIN 附加字段", "example": "饮料乳品" },
+          "spec": { "type": "string", "example": "550ml" },
+          "unit": { "type": "string", "example": "瓶" },
+          "costPrice": { "type": "number", "example": 1.2 },
+          "salePrice": { "type": "number", "example": 2 },
+          "stockNum": { "type": "integer", "example": 380 },
+          "warnNum": { "type": "integer", "example": 10 },
+          "supplierId": { "type": "integer", "format": "int64", "nullable": true, "example": 1 },
+          "supplierName": { "type": "string", "description": "JOIN 附加字段", "example": "农夫山泉股份有限公司" },
+          "imageUrl": { "type": "string" },
+          "status": { "type": "integer", "enum": [1, 0], "description": "1 在售 / 0 下架", "example": 1 },
+          "createTime": { "type": "string", "example": "2026-09-15 10:00:00" }
+        }
+      },
+
+      "ProductOption": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "productCode": { "type": "string", "example": "6900000000001" },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "unit": { "type": "string", "example": "瓶" },
+          "salePrice": { "type": "number", "example": 2 },
+          "stockNum": { "type": "integer", "example": 380 },
+          "categoryName": { "type": "string", "example": "饮料乳品" }
+        }
+      },
+
+      "PageProduct": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } },
+          "total": { "type": "integer", "example": 16 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "Supplier": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1 },
+          "supplierName": { "type": "string", "example": "农夫山泉股份有限公司" },
+          "contactPerson": { "type": "string", "example": "王经理" },
+          "phone": { "type": "string", "example": "13800000001" },
+          "address": { "type": "string", "example": "浙江省杭州市建德市" },
+          "remark": { "type": "string", "example": "饮料乳品主供" },
+          "createTime": { "type": "string", "example": "2026-09-01 09:00:00" }
+        }
+      },
+
+      "SupplierOptionList": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "integer", "format": "int64", "example": 1 },
+            "supplierName": { "type": "string", "example": "农夫山泉股份有限公司" }
+          }
+        }
+      },
+
+      "PageSupplier": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/Supplier" } },
+          "total": { "type": "integer", "example": 5 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "StockLog": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 2001 },
+          "productId": { "type": "integer", "format": "int64", "example": 1 },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "changeType": { "type": "integer", "enum": [1, 2], "description": "1 入库 / 2 出库", "example": 1 },
+          "quantity": { "type": "integer", "description": "变动数量（正数）", "example": 120 },
+          "beforeNum": { "type": "integer", "example": 260 },
+          "afterNum": { "type": "integer", "example": 380 },
+          "supplierName": { "type": "string", "description": "仅入库有值", "example": "农夫山泉股份有限公司" },
+          "inboundPrice": { "type": "number", "nullable": true, "description": "仅入库有值", "example": 1.2 },
+          "operator": { "type": "string", "example": "系统管理员" },
+          "remark": { "type": "string" },
+          "createTime": { "type": "string", "example": "2026-10-06 09:30:00" }
+        }
+      },
+
+      "PageStockLog": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/StockLog" } },
+          "total": { "type": "integer", "example": 15 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "WarnProduct": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "format": "int64", "example": 8 },
+          "productName": { "type": "string", "example": "维达抽纸 3 层" },
+          "productCode": { "type": "string", "example": "6900000000008" },
+          "unit": { "type": "string", "example": "件" },
+          "stockNum": { "type": "integer", "example": 0 },
+          "warnNum": { "type": "integer", "example": 10 },
+          "warnStatus": { "type": "integer", "enum": [1, 2], "description": "1 低于预警值 / 2 已缺货", "example": 2 }
+        }
+      },
+
+      "StockStatistics": {
+        "type": "object",
+        "properties": {
+          "totalStock": { "type": "integer", "description": "库存总量 Σ stockNum", "example": 1160 },
+          "warnProductCount": { "type": "integer", "description": "0 < stockNum < warnNum", "example": 3 },
+          "outProductCount": { "type": "integer", "description": "stockNum = 0", "example": 1 },
+          "pendingProductCount": { "type": "integer", "description": "stockNum < warnNum（含缺货）", "example": 4 },
+          "totalStockValue": { "type": "number", "description": "Σ costPrice × stockNum", "example": 5286.4 }
+        }
+      },
+
+      "SaleRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1001 },
+          "saleNo": { "type": "string", "example": "XS20261011-001" },
+          "totalQuantity": { "type": "integer", "example": 5 },
+          "totalAmount": { "type": "number", "example": 23.5 },
+          "payType": { "type": "integer", "enum": [1, 2, 3, 4], "example": 1 },
+          "operator": { "type": "string", "example": "张敏" },
+          "status": { "type": "integer", "enum": [1, 2, 3], "description": "1 正常 / 2 已退货 / 3 已作废", "example": 1 },
+          "remark": { "type": "string" },
+          "createTime": { "type": "string", "example": "2026-10-11 09:42:00" }
+        }
+      },
+
+      "SaleItem": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "format": "int64", "example": 1 },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "categoryName": { "type": "string", "example": "饮料乳品" },
+          "quantity": { "type": "integer", "example": 2 },
+          "salePrice": { "type": "number", "example": 2 },
+          "costPrice": { "type": "number", "example": 1.2 },
+          "amount": { "type": "number", "example": 4 }
+        }
+      },
+
+      "SaleRecordDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SaleRecord" },
+          {
+            "type": "object",
+            "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/SaleItem" } }
+            }
+          }
+        ]
+      },
+
+      "PageSaleRecord": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/SaleRecord" } },
+          "total": { "type": "integer", "example": 18 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "SaleSubmitResult": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "example": 1019 },
+          "saleNo": { "type": "string", "example": "XS20261011-019" },
+          "totalQuantity": { "type": "integer", "example": 3 },
+          "totalAmount": { "type": "number", "example": 7.5 }
+        }
+      },
+
+      "SaleItemRow": {
+        "type": "object",
+        "description": "商品销售历史行",
+        "properties": {
+          "saleNo": { "type": "string", "example": "XS20261011-001" },
+          "createTime": { "type": "string", "example": "2026-10-11 09:42:00" },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "categoryName": { "type": "string", "example": "饮料乳品" },
+          "quantity": { "type": "integer", "example": 2 },
+          "salePrice": { "type": "number", "example": 2 },
+          "amount": { "type": "number", "example": 4 }
+        }
+      },
+
+      "PageSaleItemRow": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "array", "items": { "$ref": "#/components/schemas/SaleItemRow" } },
+          "total": { "type": "integer", "example": 5 },
+          "pageNum": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 10 }
+        }
+      },
+
+      "SaleStatistics": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "totalQuantity": { "type": "integer", "example": 320 },
+              "totalAmount": { "type": "number", "example": 4520.5 },
+              "totalCost": { "type": "number", "example": 2980.2 },
+              "totalProfit": { "type": "number", "example": 1540.3 }
+            }
+          },
+          "dailyTrend": {
+            "type": "array",
+            "description": "区间内每天补齐，无销售日为 0",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": { "type": "string", "example": "2026-10-05" },
+                "sale": { "type": "number", "example": 6240 },
+                "cost": { "type": "number", "example": 4120 },
+                "profit": { "type": "number", "example": 2120 }
+              }
+            }
+          },
+          "categoryStats": {
+            "type": "array",
+            "description": "按 amount 降序",
+            "items": {
+              "type": "object",
+              "properties": {
+                "categoryName": { "type": "string", "example": "饮料乳品" },
+                "amount": { "type": "number", "example": 8620 }
+              }
+            }
+          },
+          "productStats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": { "type": "integer", "format": "int64", "example": 1 },
+                "productName": { "type": "string", "example": "农夫山泉 550ml" },
+                "categoryName": { "type": "string", "example": "饮料乳品" },
+                "salePrice": { "type": "number", "example": 2 },
+                "quantity": { "type": "integer", "example": 96 },
+                "amount": { "type": "number", "example": 192 },
+                "cost": { "type": "number", "example": 115.2 },
+                "profit": { "type": "number", "example": 76.8 },
+                "rate": { "type": "number", "description": "毛利率百分比 = profit / amount × 100", "example": 40 }
+              }
+            }
+          }
+        }
+      },
+
+      "DashboardOverview": {
+        "type": "object",
+        "properties": {
+          "todaySaleAmount": { "type": "number", "example": 8642.5 },
+          "todayCompareRate": { "type": "number", "description": "环比 %，可为负", "example": 12.6 },
+          "todayTrend": { "type": "array", "items": { "type": "number" }, "description": "8 个采样点", "example": [420, 360, 300, 480, 620, 760, 690, 820] },
+          "todayProfitAmount": { "type": "number", "example": 1420.6 },
+          "todayProfitRate": { "type": "number", "example": -3.8 },
+          "todayProfitTrend": { "type": "array", "items": { "type": "number" }, "example": [86, 72, 60, 95, 128, 152, 138, 166] },
+          "monthSaleAmount": { "type": "number", "example": 268430.6 },
+          "monthSaleRate": { "type": "number", "example": 9.4 },
+          "monthSaleTrend": { "type": "array", "items": { "type": "number" }, "example": [6820, 7240, 6980, 7560, 7380, 8120, 7840, 8460] },
+          "monthProfitAmount": { "type": "number", "example": 38650.8 },
+          "monthProfitRate": { "type": "number", "example": 8.2 },
+          "monthTrend": { "type": "array", "items": { "type": "number" }, "example": [1820, 2140, 1960, 2480, 2320, 2760, 2540, 2980] },
+          "monthInboundQuantity": { "type": "integer", "example": 12860 },
+          "inboundCompareRate": { "type": "number", "example": -4.2 },
+          "productKindCount": { "type": "integer", "description": "商品总种类 SKU 数", "example": 1268 },
+          "warnProductCount": { "type": "integer", "example": 23 },
+          "pendingStockCount": { "type": "integer", "example": 47 }
+        }
+      },
+
+      "StockTopItem": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "format": "int64", "example": 1 },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "stockNum": { "type": "integer", "example": 3860 }
+        }
+      },
+
+      "CategoryStockItem": {
+        "type": "object",
+        "properties": {
+          "categoryId": { "type": "integer", "format": "int64", "example": 1 },
+          "categoryName": { "type": "string", "example": "饮料乳品" },
+          "stockNum": { "type": "integer", "example": 8620 }
+        }
+      },
+
+      "HotProductItem": {
+        "type": "object",
+        "properties": {
+          "productId": { "type": "integer", "format": "int64", "example": 1 },
+          "productName": { "type": "string", "example": "农夫山泉 550ml" },
+          "saleAmount": { "type": "number", "example": 4280 },
+          "saleQuantity": { "type": "integer", "example": 960 }
+        }
+      }
+    }
+  }
+}
