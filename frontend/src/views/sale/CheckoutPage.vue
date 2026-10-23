@@ -68,11 +68,12 @@ const filteredProducts = computed(() => {
   })
 })
 
-/** 回车时若命中完整条码，按扫码入单处理并清空输入（用于扫码枪聚焦在搜索框上的情况） */
+/** 回车时按条码入单（扫码枪聚焦在搜索框时走这里）；纯数字长串视为扫码，未命中也要给出提醒 */
 function handleSearchEnter() {
   const key = keyword.value.trim()
   if (!key) return
-  if (!products.value.some((product) => String(product.productCode) === key)) return
+  const matched = products.value.some((product) => String(product.productCode) === key)
+  if (!matched && !/^\d{8,}$/.test(key)) return
   keyword.value = ''
   handleScan(key)
 }
