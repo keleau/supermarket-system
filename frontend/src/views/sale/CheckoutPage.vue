@@ -12,7 +12,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleCheckFilled, Search } from '@element-plus/icons-vue'
+import { Aim, CircleCheckFilled, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { createSaleRecord } from '@/api/modules/sale'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
@@ -230,6 +230,52 @@ function handleScan(code) {
   }
   playScanSound(true)
   flashRow(hit.id)
+  recordRecentScan(hit)
+}
+
+/* ---------------- 扫码模式弹窗 ---------------- */
+
+const scanDialogVisible = ref(false)
+const scanCode = ref('')
+const scanInputRef = ref(null)
+/** 最近扫到的商品（最多 5 条），给收银员即时的可视反馈 */
+const recentScans = ref([])
+
+function openScanDialog() {
+  scanCode.value = ''
+  recentScans.value = []
+  scanDialogVisible.value = true
+}
+
+/** 弹窗动画结束后聚焦输入框，扫码枪即可直接输入 */
+function focusScanInput() {
+  scanInputRef.value?.focus()
+}
+
+/** 扫码成功后记录到弹窗内的最近扫码列表 */
+function recordRecentScan(product) {
+  const line = cart.value.find((item) => item.productId === product.id)
+  const quantity = line ? line.quantity : 1
+  const existing = recentScans.value.find((item) => item.productId === product.id)
+  if (existing) {
+    existing.quantity = quantity
+  } else {
+    recentScans.value.unshift({
+      productId: product.id,
+      productName: product.productName,
+      productCode: product.productCode,
+      quantity,
+    })
+    if (recentScans.value.length > 5) recentScans.value.pop()
+  }
+}
+
+/** 弹窗内输入框回车（扫码枪或手动输入都会走这里） */
+function handleScanInputEnter() {
+  const code = scanCode.value.trim()
+  if (!code) return
+  scanCode.value = ''
+  handleScan(code)
 }
 
 /** 挂载全局扫码枪监听（不聚焦输入框时也可扫码加购；结算中/成功弹窗期间暂停） */
@@ -290,8 +336,11 @@ function goSaleRecord() {
         <header class="card-head">
           <div class="card-heading">
             <h3 class="card-title">商品选择</h3>
-            <p class="card-subtitle">点击商品加入清单，或直接用扫码枪扫描条码入单</p>
+            <p class="card-subtitle">点击商品加入清单，或点击「扫码入单」用扫码枪加购</p>
           </div>
+          <el-button type="primary" plain :icon="Aim" class="scan-btn" @click="openScanDialog">
+            扫码入单
+          </el-button>
         </header>
 
         <el-input
@@ -460,6 +509,50 @@ function goSaleRecord() {
         </el-button>
       </footer>
     </section>
+
+    <!-- ============ 扫码入单弹窗 ============ -->
+    <el-dialog
+      v-model="scanDialogVisible"
+      width="440px"
+      align-center
+      :close-on-click-modal="false"
+      class="scan-dialog"
+      @opened="focusScanInput"
+    >
+      <div class="scan-body">
+        <div class="scan-visual">
+          <span class="scan-ring"></span>
+          <span class="scan-ring scan-ring-2"></span>
+          <el-icon class="scan-icon"><Aim /></el-icon>
+        </div>
+        <h4 class="scan-title">扫码入单</h4>
+        <p class="scan-tip">请将商品条码对准扫码枪，听到提示音即加入清单</p>
+
+        <el-input
+          ref="scanInputRef"
+          v-model="scanCode"
+          class="scan-input"
+          placeholder="等待扫码…（也可手动输入条码后回车）"
+          clearable
+          @keyup.enter="handleScanInputEnter"
+        />
+
+        <ul v-if="recentScans.length" class="scan-list">
+          <li v-for="item in recentScans" :key="item.productId" class="scan-item">
+            <span class="scan-item-name">{{ item.productName }}</span>
+            <span class="scan-item-code">{{ item.productCode }}</span>
+            <span class="scan-item-qty">×{{ item.quantity }}</span>
+          </li>
+        </ul>
+        <p v-else class="scan-empty">本次尚未扫码，扫第一件商品试试</p>
+      </div>
+      <template #footer>
+        <div class="scan-footer">
+          <span class="scan-total">当前共 {{ totalCount }} 件 · 应收 ¥{{ money(payable) }}</span>
+          <el-button type="primary" @click="scanDialogVisible = false">完成扫码</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <!-- ============ 开单成功弹窗 ============ -->
     <el-dialog
@@ -835,6 +928,150 @@ function goSaleRecord() {
   height: 44px;
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ---------------- 扫码入单弹窗 ---------------- */
+
+.scan-btn {
+  flex-shrink: 0;
+}
+
+.scan-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0 0;
+}
+
+.scan-visual {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+}
+
+.scan-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--brand-primary-light-5);
+  animation: scan-pulse 2s var(--ease-standard) infinite;
+}
+
+.scan-ring-2 {
+  animation-delay: 1s;
+}
+
+.scan-icon {
+  font-size: 38px;
+  color: var(--brand-primary);
+}
+
+@keyframes scan-pulse {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+
+.scan-title {
+  margin: 6px 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.scan-tip {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.scan-input {
+  margin-top: 14px;
+}
+
+.scan-input :deep(.el-input__inner) {
+  text-align: center;
+  font-family: Consolas, Monaco, monospace;
+  letter-spacing: 1px;
+}
+
+.scan-list {
+  width: 100%;
+  max-height: 168px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.scan-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-muted);
+  font-size: 12.5px;
+  animation: scan-item-in 0.24s var(--ease-standard);
+}
+
+@keyframes scan-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.scan-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.scan-item-code {
+  font-size: 11.5px;
+  font-family: Consolas, Monaco, monospace;
+  color: var(--text-secondary);
+}
+
+.scan-item-qty {
+  font-weight: 700;
+  color: var(--brand-primary);
+}
+
+.scan-empty {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--text-disabled);
+}
+
+.scan-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.scan-total {
+  font-size: 12.5px;
+  color: var(--text-secondary);
 }
 
 /* ---------------- 成功弹窗 ---------------- */
