@@ -22,6 +22,7 @@ import {
 import { getSupplierOptions } from '@/api/modules/supplier'
 import { getStockLogList } from '@/api/modules/stock'
 import { getSaleItemList } from '@/api/modules/sale'
+import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
 import { downloadCsv } from '@/utils/csv.js'
 import { formatInt, money } from '@/utils/format.js'
 
@@ -88,6 +89,15 @@ function handleQuery() {
   pagination.pageNum = 1
   loadList()
 }
+
+/** 扫码枪扫描条码：填入条码条件并立即查询 */
+function handleScan(code) {
+  filterForm.productCode = code
+  handleQuery()
+}
+
+/** 弹窗/抽屉打开期间暂停全局扫码，避免误改筛选条件 */
+useBarcodeScanner(handleScan, { enabled: () => !dialogVisible.value && !detailVisible.value })
 
 function handleReset() {
   filterForm.productName = ''
@@ -358,7 +368,7 @@ function nameInitial(name) {
         <el-form-item label="条码">
           <el-input
             v-model="filterForm.productCode"
-            placeholder="如 6900000000001"
+            placeholder="扫码或输入条码"
             clearable
             style="width: 200px"
             @keyup.enter="handleQuery"

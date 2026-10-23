@@ -5,6 +5,7 @@
  *      → 底部收银结算（支付方式 + 实收 + 找零 + 提交开单）
  * 业务：
  * - 商品来自 GET /api/product/options（仅在售商品，含 salePrice 与 stockNum）
+ * - 支持 USB 扫码枪扫码入单：按 productCode 精确匹配后自动加购，带提示音与行高亮
  * - 提交 POST /api/sale/record，后端在同一事务内完成：写单 + 明细 + 扣库存 + 写出库流水
  * - 缺货商品不可加入清单；数量上限 = 当前库存，防止超卖
  */
@@ -14,6 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheckFilled, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { createSaleRecord } from '@/api/modules/sale'
+import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
 
 const router = useRouter()
 
@@ -66,15 +68,13 @@ const filteredProducts = computed(() => {
   })
 })
 
-/** 回车时若命中完整条码，模拟扫码枪直接加入清单并清空输入 */
+/** 回车时若命中完整条码，按扫码入单处理并清空输入（用于扫码枪聚焦在搜索框上的情况） */
 function handleSearchEnter() {
   const key = keyword.value.trim()
   if (!key) return
-  const hit = products.value.find((product) => product.productCode === key)
-  if (hit) {
-    addToCart(hit)
-    keyword.value = ''
-  }
+  if (!products.value.some((product) => String(product.productCode) === key)) return
+  keyword.value = ''
+  handleScan(key)
 }
 
 /* ---------------- 销售清单 ---------------- */
@@ -86,16 +86,17 @@ function getStock(productId) {
   return products.value.find((product) => product.id === productId)?.stockNum ?? 0
 }
 
+/** 加入清单；返回是否成功（缺货 / 超出库存时返回 false 并提示） */
 function addToCart(product) {
   if (product.stockNum <= 0) {
     ElMessage.warning(`「${product.productName}」已缺货，无法开单`)
-    return
+    return false
   }
   const line = cart.value.find((item) => item.productId === product.id)
   if (line) {
     if (line.quantity >= product.stockNum) {
       ElMessage.warning(`「${product.productName}」库存仅剩 ${product.stockNum} 件`)
-      return
+      return false
     }
     line.quantity += 1
   } else {
@@ -107,6 +108,7 @@ function addToCart(product) {
       quantity: 1,
     })
   }
+  return true
 }
 
 function removeLine(line) {
@@ -164,6 +166,74 @@ const canSubmit = computed(() => {
 /** 现金快捷金额 */
 const quickAmounts = [50, 100, 200]
 
+/* ---------------- 扫码入单 ---------------- */
+
+/** 最近加入清单的商品，用于行级高亮反馈 */
+const flashId = ref(null)
+let flashTimer = null
+
+function flashRow(productId) {
+  clearTimeout(flashTimer)
+  flashId.value = productId
+  flashTimer = setTimeout(() => {
+    flashId.value = null
+  }, 800)
+}
+
+/** 扫码命中行高亮 */
+function cartRowClass({ row }) {
+  return row.productId === flashId.value ? 'cart-row-flash' : ''
+}
+
+/** 复用同一个音频上下文，避免连续扫码时创建过多实例 */
+let audioCtx = null
+
+/** 短促提示音：成功高音，失败低沉双音 */
+function playScanSound(success) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+    if (audioCtx.state === 'suspended') audioCtx.resume()
+    const now = audioCtx.currentTime
+    const gain = audioCtx.createGain()
+    gain.connect(audioCtx.destination)
+    gain.gain.setValueAtTime(0.16, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18)
+    const osc = audioCtx.createOscillator()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(success ? 1567 : 660, now)
+    if (!success) osc.frequency.setValueAtTime(440, now + 0.12)
+    osc.connect(gain)
+    osc.start(now)
+    osc.stop(now + 0.18)
+  } catch {
+    /* 浏览器不支持 Web Audio 时静默失败 */
+  }
+}
+
+/**
+ * 处理一次扫码：按条码查找在售商品，命中则加入清单并高亮，否则红色提醒。
+ * 兼作搜索框回车（聚焦在输入框时）的入口，避免扫码逻辑重复。
+ */
+function handleScan(code) {
+  const hit = products.value.find((product) => String(product.productCode) === code)
+  if (!hit) {
+    playScanSound(false)
+    ElMessage.error({ message: `未找到条码「${code}」对应的在售商品`, grouping: true })
+    return
+  }
+  const added = addToCart(hit)
+  if (!added) {
+    playScanSound(false)
+    flashRow(hit.id)
+    return
+  }
+  playScanSound(true)
+  flashRow(hit.id)
+}
+
+/** 挂载全局扫码枪监听（不聚焦输入框时也可扫码加购；结算中/成功弹窗期间暂停） */
+useBarcodeScanner(handleScan, { enabled: () => !successVisible.value && !submitting.value })
+
 /* ---------------- 提交开单 ---------------- */
 
 const successVisible = ref(false)
@@ -219,7 +289,7 @@ function goSaleRecord() {
         <header class="card-head">
           <div class="card-heading">
             <h3 class="card-title">商品选择</h3>
-            <p class="card-subtitle">点击商品加入销售清单，回车可按条码扫码加购</p>
+            <p class="card-subtitle">点击商品加入清单，或直接用扫码枪扫描条码入单</p>
           </div>
         </header>
 
@@ -273,7 +343,7 @@ function goSaleRecord() {
           <el-button text type="danger" :disabled="!cart.length" @click="clearCart">清空</el-button>
         </header>
 
-        <el-table v-if="cart.length" :data="cart" class="cart-table" max-height="352">
+        <el-table v-if="cart.length" :data="cart" class="cart-table" max-height="352" :row-class-name="cartRowClass">
           <el-table-column prop="productName" label="商品名称" min-width="140" show-overflow-tooltip />
           <el-table-column label="单价" width="84" align="right">
             <template #default="{ row }">¥{{ money(row.salePrice) }}</template>
@@ -611,6 +681,19 @@ function goSaleRecord() {
 .line-amount {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.cart-table :deep(.cart-row-flash > td) {
+  animation: cart-flash 0.8s var(--ease-standard);
+}
+
+@keyframes cart-flash {
+  0% {
+    background: var(--brand-primary-light-9);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .cart-empty {

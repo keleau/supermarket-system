@@ -8,13 +8,14 @@
  * 业务：提交后由后端在事务内更新库存并生成流水，前端只刷新列表
  * 权限：管理员与操作员均可提交
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Download, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { getSupplierOptions } from '@/api/modules/supplier'
 import { createInbound, createOutbound, getInboundList, getOutboundList } from '@/api/modules/stock'
+import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
 import { formatInt, money } from '@/utils/format.js'
 
 const route = useRoute()
@@ -152,8 +153,37 @@ const rules = computed(() => ({
 
 function openCreate() {
   Object.assign(form, defaultForm())
+  barcode.value = ''
   dialogVisible.value = true
+  // 弹窗打开后把光标放到扫码框，扫码枪即可直接输入
+  nextTick(() => barcodeRef.value?.focus())
 }
+
+/* ---------------- 扫码选商品 ---------------- */
+
+const barcodeRef = ref(null)
+const barcode = ref('')
+
+/** 按条码匹配在售商品并自动选中（扫码枪输入与手动输入回车共用） */
+function applyBarcode(code) {
+  const key = String(code || '').trim()
+  if (!key) return
+  const hit = productOptions.value.find((p) => String(p.productCode) === key)
+  if (!hit) {
+    ElMessage.warning(`未找到条码「${key}」对应的在售商品`)
+    return
+  }
+  form.productId = hit.id
+  barcode.value = ''
+  ElMessage.success(`已选中「${hit.productName}」`)
+}
+
+function handleBarcodeEnter() {
+  applyBarcode(barcode.value)
+}
+
+/** 弹窗打开期间支持不聚焦扫码框直接扫码 */
+useBarcodeScanner(applyBarcode, { enabled: () => dialogVisible.value })
 
 async function handleSubmit() {
   if (!formRef.value) return
@@ -300,6 +330,16 @@ async function handleSubmit() {
       :close-on-click-modal="false"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="inbound-form">
+        <el-form-item label="扫码选商品">
+          <el-input
+            ref="barcodeRef"
+            v-model="barcode"
+            placeholder="扫码枪扫描条码，自动选中商品"
+            clearable
+            @keyup.enter="handleBarcodeEnter"
+          />
+          <span class="form-hint">也可手动输入条码后回车，仅支持已录入且在售的商品</span>
+        </el-form-item>
         <el-form-item :label="`${isInbound ? '入库' : '出库'}商品`" prop="productId">
           <el-select v-model="form.productId" filterable placeholder="请选择商品" style="width: 100%">
             <el-option
