@@ -91,7 +91,7 @@ async function productKindCount() {
 async function warnCounts() {
   const rows = await query(
     `SELECT
-       COALESCE(SUM(CASE WHEN stock_num < warn_num THEN 1 ELSE 0 END), 0) AS pendingStockCount,
+       COALESCE(SUM(CASE WHEN stock_num <= 0 OR stock_num < warn_num THEN 1 ELSE 0 END), 0) AS pendingStockCount,
        COALESCE(SUM(CASE WHEN stock_num <= 0 THEN 1 ELSE 0 END), 0)       AS outProductCount,
        COALESCE(SUM(CASE WHEN stock_num > 0 AND stock_num < warn_num THEN 1 ELSE 0 END), 0) AS warnProductCount
      FROM product`

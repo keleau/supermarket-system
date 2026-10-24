@@ -6,6 +6,12 @@
 const mysql = require('mysql2/promise');
 const config = require('../config');
 
+// 只接受 ±HH:MM，避免把任意字符串拼进 SET time_zone
+const MYSQL_TIME_ZONE = config.db.timeZone;
+if (!/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(MYSQL_TIME_ZONE)) {
+  throw new Error(`DB_TIME_ZONE 格式不正确：${MYSQL_TIME_ZONE}（示例：+08:00）`);
+}
+
 const pool = mysql.createPool({
   host: config.db.host,
   port: config.db.port,
@@ -19,6 +25,13 @@ const pool = mysql.createPool({
   dateStrings: true,
   decimalNumbers: true,
   supportBigNumbers: true,
+});
+
+// 新连接统一会话时区，保证 NOW() / CURRENT_TIMESTAMP 与 Node 计算的日期边界一致
+pool.on('connection', (conn) => {
+  conn.query(`SET time_zone = '${MYSQL_TIME_ZONE}'`, (err) => {
+    if (err) console.error('[db] 设置会话时区失败：', err.message);
+  });
 });
 
 /**

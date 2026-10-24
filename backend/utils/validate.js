@@ -49,11 +49,23 @@ function isUsername(v) {
   return /^\w{3,20}$/.test(String(v));
 }
 
-/** 日期：YYYY-MM-DD */
+/** 日期：YYYY-MM-DD（且必须是真实存在的日期，2 月 30 日这类会被拒绝） */
 function isDate(v) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return false;
-  const d = new Date(`${v}T00:00:00`);
-  return !Number.isNaN(d.getTime());
+  const s = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+
+  const [year, month, day] = s.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() + 1 === month && d.getDate() === day;
+}
+
+/** 日期区间校验：格式 + 开始不晚于结束（空值视为不限） */
+function assertDateRange(start, end) {
+  if (!isBlank(start)) assert(isDate(start), '开始日期格式不正确（YYYY-MM-DD）');
+  if (!isBlank(end)) assert(isDate(end), '结束日期格式不正确（YYYY-MM-DD）');
+  if (!isBlank(start) && !isBlank(end)) {
+    assert(String(start) <= String(end), '开始日期不能晚于结束日期');
+  }
 }
 
 /**
@@ -89,6 +101,6 @@ function endOfDay(v) {
 
 module.exports = {
   isBlank, toInt, toNum, toStr, round2,
-  isPhone, isIdCard, isUsername, isDate,
+  isPhone, isIdCard, isUsername, isDate, assertDateRange,
   paging, assert, startOfDay, endOfDay,
 };

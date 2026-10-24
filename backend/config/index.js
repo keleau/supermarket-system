@@ -3,6 +3,9 @@
  */
 require('dotenv').config();
 
+// 统一业务时区。必须在任何 Date 计算之前设置，否则「今天」的边界会按服务器默认时区算。
+process.env.TZ = process.env.TZ || 'Asia/Shanghai';
+
 module.exports = {
   port: Number(process.env.PORT) || 3000,
 
@@ -12,6 +15,8 @@ module.exports = {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '123456',
     database: process.env.DB_NAME || 'supermarket_admin',
+    // MySQL 会话时区，需与上面的 TZ 保持一致（数字偏移格式）
+    timeZone: process.env.DB_TIME_ZONE || '+08:00',
   },
 
   jwt: {

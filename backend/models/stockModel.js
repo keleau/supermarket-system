@@ -92,9 +92,12 @@ async function insertLog(conn, data) {
  * 预警商品列表
  * stockNum = 0 → warnStatus 2（已缺货）
  * 0 < stockNum < warnNum → warnStatus 1（低于预警值）
+ *
+ * 注意：缺货商品必须无条件进入预警列表。只写 stock_num < warn_num 时，
+ * 预警值为 0 的商品（新商品默认值）库存降到 0 后会被漏掉。
  */
-async function warnList({ productName, warnStatus }) {
-  const where = ['p.stock_num < p.warn_num'];
+function buildWarnWhere({ productName, warnStatus }) {
+  const where = ['(p.stock_num <= 0 OR p.stock_num < p.warn_num)'];
   const params = [];
 
   if (productName) {
@@ -107,6 +110,12 @@ async function warnList({ productName, warnStatus }) {
     where.push('p.stock_num > 0');
   }
 
+  return { whereSql: where.join(' AND '), params };
+}
+
+async function warnList({ productName, warnStatus }) {
+  const { whereSql, params } = buildWarnWhere({ productName, warnStatus });
+
   return query(
     `SELECT
        p.id           AS productId,
@@ -117,7 +126,7 @@ async function warnList({ productName, warnStatus }) {
        p.warn_num     AS warnNum,
        CASE WHEN p.stock_num <= 0 THEN 2 ELSE 1 END AS warnStatus
      FROM product p
-     WHERE ${where.join(' AND ')}
+     WHERE ${whereSql}
      ORDER BY p.stock_num ASC, p.id ASC`,
     params
   );
@@ -130,7 +139,7 @@ async function statistics() {
        COALESCE(SUM(stock_num), 0)                                            AS totalStock,
        COALESCE(SUM(CASE WHEN stock_num > 0 AND stock_num < warn_num THEN 1 ELSE 0 END), 0) AS warnProductCount,
        COALESCE(SUM(CASE WHEN stock_num <= 0 THEN 1 ELSE 0 END), 0)           AS outProductCount,
-       COALESCE(SUM(CASE WHEN stock_num < warn_num THEN 1 ELSE 0 END), 0)     AS pendingProductCount,
+       COALESCE(SUM(CASE WHEN stock_num <= 0 OR stock_num < warn_num THEN 1 ELSE 0 END), 0) AS pendingProductCount,
        COALESCE(SUM(cost_price * stock_num), 0)                               AS totalStockValue
      FROM product`
   );
@@ -157,5 +166,5 @@ async function inboundQuantityBetween(startTime, endTime) {
 }
 
 module.exports = {
-  run, logList, insertLog, warnList, statistics, inboundQuantityBetween,
+  run, logList, insertLog, buildWarnWhere, warnList, statistics, inboundQuantityBetween,
 };

@@ -8,7 +8,7 @@ const supplierModel = require('../models/supplierModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, toNum, round2, paging, assert, startOfDay, endOfDay,
+  toStr, toInt, toNum, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
 } = require('../utils/validate');
 
 /** 操作人一律从 token 解析，不接受前端传值（防伪造） */
@@ -19,6 +19,10 @@ function operatorName(req) {
 /** 解析流水列表的公共查询条件 */
 function logQuery(req, forcedChangeType = null) {
   const { pageNum, pageSize, offset } = paging(req.query);
+  const startDate = toStr(req.query.startTime);
+  const endDate = toStr(req.query.endTime);
+  assertDateRange(startDate, endDate);
+
   return {
     pageNum,
     pageSize,
@@ -26,8 +30,8 @@ function logQuery(req, forcedChangeType = null) {
     productName: toStr(req.query.productName) || null,
     productId: toInt(req.query.productId, null),
     changeType: forcedChangeType !== null ? forcedChangeType : toInt(req.query.changeType, null),
-    startTime: startOfDay(req.query.startTime),
-    endTime: endOfDay(req.query.endTime),
+    startTime: startOfDay(startDate),
+    endTime: endOfDay(endDate),
   };
 }
 

@@ -32,9 +32,19 @@ test('扣减库存时带上库存下限条件', async () => {
   const conn = fakeConn(1);
   await productModel.changeStock(conn, 7, -6);
 
-  assert.equal(conn.calls.length, 1);
+  assert.equal(conn.calls.length, 2);
   assert.match(conn.calls[0].sql, /AND stock_num >= \?/);
   assert.deepEqual(conn.calls[0].params, [-6, 7, 6]);
+});
+
+test('扣减后库存为 0 时附带条件下架', async () => {
+  const conn = fakeConn(1);
+  await productModel.changeStock(conn, 7, -6);
+
+  assert.match(conn.calls[1].sql, /SET status = 0/);
+  assert.match(conn.calls[1].sql, /stock_num = 0/);
+  assert.match(conn.calls[1].sql, /status = 1/);
+  assert.deepEqual(conn.calls[1].params, [7]);
 });
 
 test('条件更新未命中（库存不足）时抛业务异常', async () => {

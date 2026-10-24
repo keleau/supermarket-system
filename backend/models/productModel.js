@@ -155,6 +155,13 @@ async function changeStock(conn, id, delta) {
   if (result.affectedRows !== 1) {
     throw new BizError('库存不足，扣减失败');
   }
+
+  // 扣到 0 自动下架，避免 0 库存商品仍出现在收银选品和「在售」列表里
+  await run(
+    conn,
+    'UPDATE product SET status = 0 WHERE id = ? AND stock_num = 0 AND status = 1',
+    [id]
+  );
 }
 
 /** 单独更新上下架状态（事务内使用） */

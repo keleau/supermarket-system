@@ -8,7 +8,7 @@ const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, round2, paging, assert, startOfDay, endOfDay,
+  toStr, toInt, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
 } = require('../utils/validate');
 const { normalizeSaleItems } = require('../utils/saleItems');
 const {
@@ -28,6 +28,10 @@ async function recordList(req, res) {
   const payType = toInt(req.query.payType, null);
   if (payType !== null) assert([1, 2, 3, 4].includes(payType), '支付方式取值不合法');
 
+  const startDate = toStr(req.query.startTime);
+  const endDate = toStr(req.query.endTime);
+  assertDateRange(startDate, endDate);
+
   const result = await saleModel.recordList({
     pageNum,
     pageSize,
@@ -35,8 +39,8 @@ async function recordList(req, res) {
     saleNo: toStr(req.query.saleNo) || null,
     operator: toStr(req.query.operator) || null,
     payType,
-    startTime: startOfDay(req.query.startTime),
-    endTime: endOfDay(req.query.endTime),
+    startTime: startOfDay(startDate),
+    endTime: endOfDay(endDate),
   });
 
   return ok(res, page(result.list, result.total, pageNum, pageSize));
@@ -264,6 +268,7 @@ async function statistics(req, res) {
 
   const startStr = toStr(req.query.startTime) || formatDate(defaultStart);
   const endStr = toStr(req.query.endTime) || formatDate(today);
+  assertDateRange(startStr, endStr);
 
   const startTime = `${startStr} 00:00:00`;
   const endTime = `${endStr} 23:59:59`;

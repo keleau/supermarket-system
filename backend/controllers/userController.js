@@ -6,7 +6,7 @@ const userModel = require('../models/userModel');
 const { signToken, revokeToken } = require('../middleware/auth');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  isBlank, toInt, toStr, paging, assert, isPhone, isIdCard, isUsername,
+  isBlank, toInt, toStr, paging, assert, isPhone, isIdCard, isUsername, isDate,
 } = require('../utils/validate');
 const { roleFromPosition, normalizePosition } = require('../utils/role');
 const config = require('../config');
@@ -105,12 +105,15 @@ async function updateProfile(req, res) {
   const gender = toStr(b.gender);
   if (gender) assert(['男', '女'].includes(gender), '性别取值不正确');
 
+  const birthday = toStr(b.birthday);
+  if (birthday) assert(isDate(birthday), '出生日期格式不正确（YYYY-MM-DD）');
+
   // 白名单：只允许更新以下字段
   const data = {
     avatar: toStr(b.avatar, DEFAULT_AVATAR),
     realName: toStr(b.realName),
     gender,
-    birthday: toStr(b.birthday) || null,
+    birthday: birthday || null,
     phone,
     idCard,
     address: toStr(b.address),
@@ -167,6 +170,12 @@ function buildUserPayload(body) {
   const gender = toStr(b.gender);
   if (gender) assert(['男', '女'].includes(gender), '性别取值不正确');
 
+  const birthday = toStr(b.birthday);
+  if (birthday) assert(isDate(birthday), '出生日期格式不正确（YYYY-MM-DD）');
+
+  const joinDate = toStr(b.joinDate);
+  if (joinDate) assert(isDate(joinDate), '入职时间格式不正确（YYYY-MM-DD）');
+
   const salary = b.salary === undefined || b.salary === null || b.salary === ''
     ? 0
     : Number(b.salary);
@@ -179,8 +188,8 @@ function buildUserPayload(body) {
     phone,
     address: toStr(b.address),
     gender,
-    birthday: toStr(b.birthday) || null,
-    joinDate: toStr(b.joinDate) || null,
+    birthday: birthday || null,
+    joinDate: joinDate || null,
     salary,
     remark: toStr(b.remark),
     status: toInt(b.status, 1) === 0 ? 0 : 1,

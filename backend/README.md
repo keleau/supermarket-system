@@ -162,10 +162,12 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 ### 3.4 并发与数据一致性
 
 - **防超卖**：销售结账、出库、退货均先 `SELECT ... FOR UPDATE` 锁定商品行，再校验库存、扣减。
+- **自动上下架**：库存被扣到 0 时自动置 `status=0`；入库/销售退货使库存恢复后，原缺货下架商品自动上架。
 - **防重复操作**：退货/作废先锁定 `sale_record` 行再判断状态。
 - **销售单号防重**：`XS + yyyyMMdd + - + 3 位当日序号`，由 `uk_sale_no` 唯一索引兜底；撞号时自动重试（最多 3 次）。
 - **金额精度**：统一 `DECIMAL` 存储，`round2()` 计算保留两位小数，规避浮点误差。
 - **流水不可变**：`stock_log` 只增不改不删，每条记录均含 `beforeNum` / `afterNum`，库存账可追溯。
+- **时区统一**：Node 固定 `Asia/Shanghai`，MySQL 连接会话固定 `+08:00`，避免「今日」统计和单号日期在部署后偏移。
 
 ### 3.5 业务规则落地位置
 
@@ -178,9 +180,11 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 | 供应商被商品引用禁止删除 | `supplierController.remove` |
 | 商品有流水或销售明细禁止删除 | `productController.remove` |
 | 条码为空自动生成 `690` + 10 位序号 | `productModel.generateProductCode` |
-| 库存为 0 自动下架 | `productController.buildPayload` |
-| 预警判定（缺货 / 低于预警值） | `stockModel.warnList` |
+| 库存为 0 自动下架 | `productModel.changeStock` / `productController.buildPayload` |
+| 预警判定（缺货 / 低于预警值，缺货不受预警值影响） | `stockModel.buildWarnWhere` |
 | 销售统计仅计 status=1 的正常单据 | `saleModel.statsWhere` |
+| 统计按当前商品/分类名归并、售价取加权均价 | `saleModel.statsByProduct` |
+| 日期参数校验（真实日期 + 开始不晚于结束） | `utils/validate.assertDateRange` |
 | 金额/毛利率计算 | `saleModel.statsSummary` / `statsByProduct` |
 
 ### 3.6 两处实现口径说明

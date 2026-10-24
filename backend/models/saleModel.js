@@ -200,18 +200,23 @@ function statsWhere({ startTime, endTime, categoryName, productName }) {
   const where = ['sr.status = 1', 'sr.create_time >= ?', 'sr.create_time <= ?'];
   const params = [startTime, endTime];
 
+  // 商品/分类改名后仍按当前名称归类与筛选；商品被手工删除时退回销售快照
   if (categoryName) {
-    where.push('si.category_name = ?');
+    where.push('COALESCE(c.name, si.category_name) = ?');
     params.push(categoryName);
   }
   if (productName) {
-    where.push('si.product_name = ?');
+    where.push('COALESCE(p.product_name, si.product_name) = ?');
     params.push(productName);
   }
   return { whereSql: where.join(' AND '), params };
 }
 
-const STATS_FROM = 'FROM sale_item si JOIN sale_record sr ON sr.id = si.sale_record_id';
+const STATS_FROM = `
+  FROM sale_item si
+  JOIN sale_record sr ON sr.id = si.sale_record_id
+  LEFT JOIN product p ON p.id = si.product_id
+  LEFT JOIN category c ON c.id = p.category_id`;
 
 /** 汇总指标 */
 async function statsSummary(f) {
@@ -262,11 +267,11 @@ async function statsDaily(f) {
 async function statsByCategory(f) {
   const rows = await query(
     `SELECT
-       si.category_name             AS categoryName,
-       COALESCE(SUM(si.amount), 0)  AS amount
+       COALESCE(c.name, si.category_name) AS categoryName,
+       COALESCE(SUM(si.amount), 0)        AS amount
      ${STATS_FROM}
      WHERE ${f.whereSql}
-     GROUP BY si.category_name
+     GROUP BY COALESCE(c.name, si.category_name)
      ORDER BY amount DESC`,
     f.params
   );
@@ -274,25 +279,25 @@ async function statsByCategory(f) {
   return rows.map((r) => ({ categoryName: r.categoryName || '未分类', amount: round2(r.amount) }));
 }
 
-/** 各商品销售统计（按销售额降序） */
+/** 各商品销售统计（按销售额降序，同一商品只出一行） */
 async function statsByProduct(f) {
   const rows = await query(
     `SELECT
        si.product_id                                 AS productId,
-       si.product_name                               AS productName,
-       si.category_name                              AS categoryName,
-       MAX(si.sale_price)                            AS salePrice,
+       COALESCE(p.product_name, MAX(si.product_name)) AS productName,
+       COALESCE(c.name, MAX(si.category_name))       AS categoryName,
        COALESCE(SUM(si.quantity), 0)                 AS quantity,
        COALESCE(SUM(si.amount), 0)                   AS amount,
        COALESCE(SUM(si.cost_price * si.quantity), 0) AS cost
      ${STATS_FROM}
      WHERE ${f.whereSql}
-     GROUP BY si.product_id, si.product_name, si.category_name
+     GROUP BY si.product_id, p.product_name, c.name
      ORDER BY amount DESC`,
     f.params
   );
 
   return rows.map((r) => {
+    const quantity = Number(r.quantity) || 0;
     const amount = round2(r.amount);
     const cost = round2(r.cost);
     const profit = round2(amount - cost);
@@ -300,8 +305,9 @@ async function statsByProduct(f) {
       productId: r.productId,
       productName: r.productName,
       categoryName: r.categoryName,
-      salePrice: round2(r.salePrice),
-      quantity: Number(r.quantity) || 0,
+      // 区间加权均价：总金额 / 总数量，避免改价后显示成最高价
+      salePrice: quantity > 0 ? round2(amount / quantity) : 0,
+      quantity,
       amount,
       cost,
       profit,
@@ -341,17 +347,17 @@ async function dailyAmountsBetween(startTime, endTime) {
   return rows.map((r) => ({ date: String(r.date), amount: round2(r.amount) }));
 }
 
-/** 热销商品 TOP N（按售出数量降序） */
+/** 热销商品 TOP N（按售出数量降序，同一商品只出一行） */
 async function hotProducts(startTime, endTime, limit = 5) {
   const rows = await query(
     `SELECT
-       si.product_id                AS productId,
-       si.product_name              AS productName,
-       COALESCE(SUM(si.amount), 0)  AS saleAmount,
-       COALESCE(SUM(si.quantity), 0) AS saleQuantity
+       si.product_id                  AS productId,
+       COALESCE(p.product_name, MAX(si.product_name)) AS productName,
+       COALESCE(SUM(si.amount), 0)    AS saleAmount,
+       COALESCE(SUM(si.quantity), 0)  AS saleQuantity
      ${STATS_FROM}
      WHERE sr.status = 1 AND sr.create_time >= ? AND sr.create_time <= ?
-     GROUP BY si.product_id, si.product_name
+     GROUP BY si.product_id, p.product_name
      ORDER BY saleQuantity DESC
      LIMIT ?`,
     [startTime, endTime, limit]
