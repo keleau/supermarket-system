@@ -173,7 +173,7 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 |------|------|
 | 职位 → 角色映射（管理员→admin，其余→operator） | `utils/role.js` |
 | 个人中心敏感字段（salary/joinDate/position/role）忽略传值 | `userController.updateProfile` |
-| 禁止删除自己 / 内置管理员 | `userController.remove` |
+| 禁止删除自己 / 删除或禁用内置管理员 | `userController.remove` / `userController.update` |
 | 分类下有商品禁止删除 | `categoryController.remove` |
 | 供应商被商品引用禁止删除 | `supplierController.remove` |
 | 商品有流水或销售明细禁止删除 | `productController.remove` |

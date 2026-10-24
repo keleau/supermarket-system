@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const userController = require('../controllers/userController');
 const userModel = require('../models/userModel');
 const { pool } = require('../db/pool');
+const { BizError } = require('../utils/result');
 const config = require('../config');
 
 const EXIST = {
@@ -72,4 +73,18 @@ test('内置管理员职位被保护，不会被降权也不触发失效', async
   const payload = updated.mock.calls[0].arguments[1];
   assert.equal(payload.role, 'admin');
   assert.equal(payload.position, '管理员');
+});
+
+test('内置管理员不能被禁用，且不产生任何写入', async (t) => {
+  const admin = { ...EXIST, username: config.builtinAdminUsername, role: 'admin', position: '管理员' };
+  t.mock.method(userModel, 'findById', async () => admin);
+  const updated = t.mock.method(userModel, 'update', async () => admin);
+  const bump = t.mock.method(userModel, 'bumpTokenVersion', async () => {});
+
+  await assert.rejects(
+    () => userController.update({ body: { id: 5, position: '管理员', status: 0 } }, fakeRes()),
+    (err) => err instanceof BizError && err.code === 400 && /系统管理员不可禁用/.test(err.message)
+  );
+  assert.equal(updated.mock.callCount(), 0);
+  assert.equal(bump.mock.callCount(), 0);
 });

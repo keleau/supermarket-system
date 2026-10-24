@@ -223,6 +223,7 @@ async function update(req, res) {
 
   // 内置管理员必须保持 admin 角色，防止误操作把自己降权锁死
   const isBuiltinAdmin = exist.username === config.builtinAdminUsername;
+  assert(!isBuiltinAdmin || payload.status === 1, '系统管理员不可禁用');
   const role = isBuiltinAdmin ? 'admin' : roleFromPosition(position);
   const finalPosition = isBuiltinAdmin ? '管理员' : position;
 

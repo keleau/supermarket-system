@@ -587,7 +587,8 @@ CREATE TABLE `sale_item` (
 1. 用户不存在 → `{ code: 400, msg: "用户不存在" }`。
 2. username **不可修改**（后端忽略传入的 username）。
 3. `role` 随 `position` 重新映射（管理员→admin，其余→operator）。
-4. 其余校验同新增用户。
+4. 系统内置管理员强制保持 `admin` / `管理员`，且禁止禁用 → `{ code: 400, msg: "系统管理员不可禁用" }`。
+5. 其余校验同新增用户。
 
 ---
 
