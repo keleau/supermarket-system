@@ -25,6 +25,7 @@ CREATE TABLE `sys_user` (
   `salary`      DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '工资',
   `remark`      VARCHAR(200) NOT NULL DEFAULT '' COMMENT '备注',
   `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '1 启用 / 0 禁用',
+  `token_version` INT        NOT NULL DEFAULT 0 COMMENT '登录令牌版本号，自增后旧 token 立即失效',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`)

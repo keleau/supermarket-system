@@ -27,8 +27,20 @@ const PUBLIC_FIELDS = `
 /** 按账号查（含密码，仅供登录使用） */
 async function findByUsernameWithPassword(username) {
   const rows = await query(
-    `SELECT ${PUBLIC_FIELDS}, password FROM sys_user WHERE username = ? LIMIT 1`,
+    `SELECT ${PUBLIC_FIELDS}, password, token_version AS tokenVersion
+     FROM sys_user WHERE username = ? LIMIT 1`,
     [username]
+  );
+  return rows[0] || null;
+}
+
+/** 按 id 查鉴权所需字段（每次请求校验登录态用） */
+async function findAuthById(id) {
+  const rows = await query(
+    `SELECT id, username, real_name AS realName, role, position, status,
+            token_version AS tokenVersion
+     FROM sys_user WHERE id = ? LIMIT 1`,
+    [id]
   );
   return rows[0] || null;
 }
@@ -128,9 +140,17 @@ async function update(id, data) {
   return findById(id);
 }
 
-/** 更新密码（传已加密的哈希） */
+/** 更新密码（传已加密的哈希），同时让该用户已签发的旧 token 全部失效 */
 async function updatePassword(id, hashedPassword) {
-  await query('UPDATE sys_user SET password = ? WHERE id = ?', [hashedPassword, id]);
+  await query(
+    'UPDATE sys_user SET password = ?, token_version = token_version + 1 WHERE id = ?',
+    [hashedPassword, id]
+  );
+}
+
+/** 让该用户已签发的 token 全部失效（禁用、改角色/职位时调用） */
+async function bumpTokenVersion(id) {
+  await query('UPDATE sys_user SET token_version = token_version + 1 WHERE id = ?', [id]);
 }
 
 /** 删除 */
@@ -147,12 +167,14 @@ async function countAll() {
 module.exports = {
   PUBLIC_FIELDS,
   findByUsernameWithPassword,
+  findAuthById,
   findById,
   existsUsername,
   list,
   create,
   update,
   updatePassword,
+  bumpTokenVersion,
   remove,
   countAll,
 };

@@ -21,6 +21,12 @@ npm start        # 生产
 npm run dev      # 开发（nodemon 热重载）
 ```
 
+> ⚠️ `db:init` 会重建表并清空原有数据。**已有数据的环境不要执行**，升级表结构请运行 `db/migrations/` 下的增量脚本，例如：
+>
+> ```bash
+> mysql -u root -p supermarket_admin < db/migrations/001_add_token_version.sql
+> ```
+
 启动后访问 `http://localhost:3000/api/health` 应返回 `{"code":200,...,"database":"connected"}`。
 
 ### 初始账号
@@ -51,6 +57,7 @@ express demo/
 │   ├── pool.js             连接池 + query/execute/transaction 封装
 │   ├── schema.sql          建表 SQL（7 张表）
 │   ├── seed.sql            预置基础数据 SQL
+│   ├── migrations/         增量迁移脚本（已有数据库升级用）
 │   └── init.js             一键初始化脚本（建库→建表→预置→写用户）
 │
 ├── routers/                路由层：请求分发
@@ -118,9 +125,14 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 
 ### 3.2 鉴权
 
-- 登录返回 JWT（携带 `userId` / `role` / `position`），前端以 `Authorization: Bearer <token>` 携带。
-- `authenticate` 中间件校验 token；`requireAdmin` 进一步校验 `role === 'admin'`。
-- **操作人字段一律从 token 解析**（`operatorName(req)`），不接受前端传值，防止伪造操作人。
+- 登录返回 JWT（携带 `userId` / `role` / `position` / `tokenVersion`），前端以 `Authorization: Bearer <token>` 携带。
+- `authenticate` 中间件除验签外，**每个受保护请求都会回库查一次当前用户**：
+  - 账号被删除或禁用 → 立即 401；
+  - token 中的 `tokenVersion` 与库中不一致 → 立即 401。
+- 修改密码、管理员重置密码、禁用/启用账号、变更职位时会执行 `token_version + 1`，该用户所有旧 token 立刻失效，无需等 24 小时过期。
+- 权限判断以**数据库当前值**为准，token 里过时的 `role` 不会生效（被降权的管理员无法继续调用 admin 接口）。
+- `requireAdmin` 进一步校验 `role === 'admin'`。
+- **操作人字段一律从数据库/ token 解析**（`operatorName(req)`），不接受前端传值，防止伪造操作人。
 - 退出登录将 token 加入内存黑名单立即失效（单机部署足够；多实例可替换为 Redis）。
 
 权限矩阵按需求文档落地：
@@ -203,7 +215,8 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 
 - `index.js` 是本项目原有的 todo 练手 demo，已被 `app.js` 取代，确认后可删除。
 - `db/seed.sql` 中不含用户数据：密码需 bcrypt 加密，无法用纯 SQL 预置，由 `db/init.js` 运行期写入。
-- 内存版 token 黑名单在服务重启后失效，生产环境建议替换 Redis。
+- 内存版 token 黑名单在服务重启后失效；账号状态与 `token_version` 存在数据库中，重启不影响这部分失效逻辑。生产环境建议把黑名单替换为 Redis。
+- 已有数据库升级到 `token_version` 版本需执行 `db/migrations/001_add_token_version.sql`（增量 `ALTER TABLE`，不会清空数据）。
 - 操作日志按需求文档属「建议项」，当前通过控制台访问日志体现，未单独建表。
 
 ---

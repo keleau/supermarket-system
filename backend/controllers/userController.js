@@ -227,6 +227,14 @@ async function update(req, res) {
   const finalPosition = isBuiltinAdmin ? '管理员' : position;
 
   await userModel.update(id, { ...payload, position: finalPosition, role });
+
+  // 禁用/启用或权限变化后，该用户已登录的旧 token 立即失效，需重新登录
+  const statusChanged = payload.status !== exist.status;
+  const permissionChanged = role !== exist.role || finalPosition !== exist.position;
+  if (statusChanged || permissionChanged) {
+    await userModel.bumpTokenVersion(id);
+  }
+
   return ok(res, null);
 }
 
