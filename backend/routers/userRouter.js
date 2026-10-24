@@ -5,11 +5,12 @@ const express = require('express');
 const ctrl = require('../controllers/userController');
 const asyncHandler = require('../utils/asyncHandler');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const loginRateLimit = require('../middleware/loginRateLimit');
 
 const router = express.Router();
 
 // 公开
-router.post('/login', asyncHandler(ctrl.login));
+router.post('/login', loginRateLimit, asyncHandler(ctrl.login));
 
 // 登录即可
 router.post('/logout', authenticate, asyncHandler(ctrl.logout));

@@ -26,7 +26,7 @@ async function login(req, res) {
   const user = await userModel.findByUsernameWithPassword(username);
   if (!user) throw new BizError('账号或密码错误');
 
-  const matched = bcrypt.compareSync(password, user.password);
+  const matched = await bcrypt.compare(password, user.password);
   if (!matched) throw new BizError('账号或密码错误');
 
   assert(user.status === 1, '该账号已被禁用');
@@ -83,9 +83,9 @@ async function changePassword(req, res) {
   const user = await userModel.findByUsernameWithPassword(req.user.username);
   if (!user) throw new BizError('登录已失效，请重新登录', 401);
 
-  assert(bcrypt.compareSync(oldPassword, user.password), '当前密码错误');
+  assert(await bcrypt.compare(oldPassword, user.password), '当前密码错误');
 
-  await userModel.updatePassword(user.id, bcrypt.hashSync(newPassword, 10));
+  await userModel.updatePassword(user.id, await bcrypt.hash(newPassword, 10));
   return ok(res, null);
 }
 
@@ -210,7 +210,7 @@ async function create(req, res) {
     username,
     position,
     role: roleFromPosition(position),
-    password: bcrypt.hashSync(config.defaultPassword, 10), // 初始密码 123456
+    password: await bcrypt.hash(config.defaultPassword, 10), // 初始密码 123456
   });
 
   return ok(res, { id: user.id });
@@ -277,7 +277,7 @@ async function resetPassword(req, res) {
   const exist = await userModel.findById(id);
   assert(exist, '用户不存在');
 
-  await userModel.updatePassword(id, bcrypt.hashSync(newPassword, 10));
+  await userModel.updatePassword(id, await bcrypt.hash(newPassword, 10));
   return ok(res, null);
 }
 
