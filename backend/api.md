@@ -1478,7 +1478,7 @@ CREATE TABLE `sale_item` (
 |------|------|------|------|
 | items[].productId | number | 是 | 商品 id |
 | items[].quantity  | number | 是 | 销售数量，必须 > 0 |
-| items[].salePrice | number | 否 | 销售单价（不传则取商品当前售价） |
+| items[].salePrice | number | 否 | 兼容字段：后端忽略此值，始终按商品表当前售价计价 |
 | payType           | number | 否 | 支付方式 1-4，默认 1 |
 | remark            | string | 否 | 备注 |
 
@@ -1508,7 +1508,8 @@ CREATE TABLE `sale_item` (
    - 写入 sale_record 与 sale_item（含 productName、categoryName、costPrice 冗余快照）。
    - 逐项扣减库存 `stock_num -= quantity`。
    - 逐项写入 stock_log（changeType=2 出库流水，beforeNum/afterNum）。
-   - 汇总 totalQuantity 与 totalAmount（`salePrice × quantity`，保留两位小数）。
+   - 汇总 totalQuantity 与 totalAmount（商品表当前售价 × quantity，保留两位小数）。
+6. 请求体中的 `salePrice` 不参与计价；售价以商品表 `sale_price` 为准，防止收银价篡改。
 
 ---
 

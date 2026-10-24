@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "test": "node --test \"tests/*.test.js\"",
     "db:init": "node db/init.js"
   },
   "keywords": [

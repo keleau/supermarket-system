@@ -8,8 +8,9 @@ const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, toNum, round2, paging, assert, startOfDay, endOfDay,
+  toStr, toInt, round2, paging, assert, startOfDay, endOfDay,
 } = require('../utils/validate');
+const { normalizeSaleItems } = require('../utils/saleItems');
 const {
   formatDate, formatCompact, addDays, dayStart, dayEnd, eachDate,
 } = require('../utils/date');
@@ -58,30 +59,16 @@ async function recordDetail(req, res) {
 /* 4.6.3 提交销售（收银结账）                                            */
 /* ------------------------------------------------------------------ */
 async function submit(req, res) {
-  const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
-  assert(rawItems.length > 0, '销售商品不能为空');
+  const body = req.body || {};
 
-  const payType = toInt(req.body.payType, 1);
+  // 同一商品的多行先合并成一个商品再校验库存，避免逐行校验时合计超卖
+  const items = normalizeSaleItems(body.items);
+
+  const payType = toInt(body.payType, 1);
   assert([1, 2, 3, 4].includes(payType), '支付方式取值不合法');
 
-  const remark = toStr(req.body.remark);
+  const remark = toStr(body.remark);
   const operator = operatorName(req);
-
-  // 归一化入参，顺带做基础校验
-  const items = rawItems.map((it) => {
-    const productId = toInt(it.productId, null);
-    assert(productId !== null, '销售商品不能为空');
-
-    const quantity = toInt(it.quantity, null);
-    assert(quantity !== null && quantity > 0, '销售数量必须大于 0');
-
-    const salePrice = it.salePrice === undefined || it.salePrice === null || it.salePrice === ''
-      ? null
-      : round2(toNum(it.salePrice, 0));
-    if (salePrice !== null) assert(salePrice >= 0, '销售单价不能为负');
-
-    return { productId, quantity, salePrice };
-  });
 
   // 并发下当日单号可能撞车，靠唯一索引兜底并重试
   const MAX_RETRY = 3;
@@ -96,13 +83,13 @@ async function submit(req, res) {
           // 行锁：防止并发结账导致超卖
           const product = await productModel.findByIdForUpdate(conn, it.productId);
           if (!product) throw new BizError('商品不存在');
-          if (product.status !== 1) throw new BizError(`商品 ${product.productName} 已下架`);
+          if (product.status !== 1) throw new BizError(`商品 ${product.product_name} 已下架`);
           if (it.quantity > product.stock_num) {
-            throw new BizError(`商品 ${product.productName} 库存不足`);
+            throw new BizError(`商品 ${product.product_name} 库存不足`);
           }
 
-          // 未传售价则取商品当前售价；成本价取商品当前进价
-          const salePrice = it.salePrice === null ? round2(product.sale_price) : it.salePrice;
+          // 售价只取商品表，忽略前端传入的 salePrice，防止收银价被篡改
+          const salePrice = round2(product.sale_price);
           const amount = round2(salePrice * it.quantity);
 
           prepared.push({

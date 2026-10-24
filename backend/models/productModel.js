@@ -3,6 +3,7 @@
  * 支持传入事务连接 conn —— 出入库/销售等事务内调用时，SQL 必须走同一个连接。
  */
 const { pool, query } = require('../db/pool');
+const { BizError } = require('../utils/result');
 
 /** 统一执行入口：有事务连接走事务，否则走连接池 */
 async function run(conn, sql, params = []) {
@@ -140,7 +141,20 @@ async function update(conn, id, data) {
  * @param {number} delta 正数加库存，负数减库存
  */
 async function changeStock(conn, id, delta) {
-  await run(conn, 'UPDATE product SET stock_num = stock_num + ? WHERE id = ?', [delta, id]);
+  if (delta >= 0) {
+    await run(conn, 'UPDATE product SET stock_num = stock_num + ? WHERE id = ?', [delta, id]);
+    return;
+  }
+
+  // 条件更新兜底：即使调用方漏做库存校验，也不会把库存扣成负数
+  const result = await run(
+    conn,
+    'UPDATE product SET stock_num = stock_num + ? WHERE id = ? AND stock_num >= ?',
+    [delta, id, -delta]
+  );
+  if (result.affectedRows !== 1) {
+    throw new BizError('库存不足，扣减失败');
+  }
 }
 
 /** 单独更新上下架状态（事务内使用） */

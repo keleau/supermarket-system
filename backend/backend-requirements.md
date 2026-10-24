@@ -227,7 +227,7 @@ position === '管理员'  →  role = 'admin'
 5. 逐商品写入出库流水 `stock_log`（changeType=2）。
 6. 汇总 `totalQuantity`（总件数）与 `totalAmount`（总金额 = Σ 销售价 × 数量，保留两位小数）。
 
-**金额口径：** 前端可能传 `salePrice`（收银改价），未传则取商品当前 `sale_price`；成本价取商品 `cost_price`（用于毛利统计）。
+**金额口径：** 销售价一律以商品表当前 `sale_price` 为准，忽略前端传入的 `salePrice`（防止收银价篡改）；成本价取商品 `cost_price`（用于毛利统计）。
 
 #### 5.6.2 销售退货（整单退款）
 

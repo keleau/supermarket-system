@@ -324,7 +324,16 @@ curl -X POST http://localhost:3000/api/sale/record \
 1. 商品 1 库存 -2、商品 2 库存 -1；
 2. `sale_record` 新增一张单（status=1），`sale_item` 新增两行明细（含 productName / categoryName / costPrice 冗余快照）；
 3. `stock_log` 新增两条 changeType=2 的流水；
-4. `totalAmount` = 2×2 + 3.5×1 = 7.5。
+4. `totalAmount` = 2×2 + 3.5×1 = 7.5；
+5. 请求体里的 `salePrice` 不参与计价：即使传 0.01，`sale_item.sale_price` 与 `totalAmount` 仍取商品表 `sale_price`。
+
+```bash
+# 收银价篡改：salePrice 传 0.01，后端仍按商品表价格计价
+curl -X POST http://localhost:3000/api/sale/record \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"items":[{"productId":1,"quantity":1,"salePrice":0.01}],"payType":1}'
+# 预期 data.totalAmount = 商品 1 在 product 表中的 sale_price
+```
 
 ```bash
 # 库存不足 → {"code":400,"msg":"商品 山东红富士苹果 库存不足"}
