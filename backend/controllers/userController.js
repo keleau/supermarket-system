@@ -65,6 +65,12 @@ async function info(req, res) {
     position: user.position,
     avatar: user.avatar,
     phone: user.phone,
+    // 个人中心展示 / 编辑所需字段（salary / joinDate 等薪资敏感字段仍不返回）
+    gender: user.gender,
+    birthday: user.birthday,
+    idCard: user.idCard,
+    address: user.address,
+    remark: user.remark,
   });
 }
 

@@ -263,6 +263,11 @@ const donutColors = [
   cssVar('--chart-5'),
 ]
 
+/** 分类数超过 5 个时按序循环色板，避免第 6 个起颜色 / 图例圆点丢失 */
+function donutColorAt(index) {
+  return donutColors[index % donutColors.length]
+}
+
 const categoryTotal = computed(() =>
   categoryStock.value.reduce((sum, item) => sum + Number(item.stockNum || 0), 0),
 )
@@ -290,7 +295,11 @@ const donutOption = computed(() => ({
       label: { show: false },
       labelLine: { show: false },
       emphasis: { scale: true, scaleSize: 4 },
-      data: categoryStock.value.map((item) => ({ name: item.categoryName, value: item.stockNum })),
+      data: categoryStock.value.map((item, index) => ({
+        name: item.categoryName,
+        value: item.stockNum,
+        itemStyle: { color: donutColorAt(index) },
+      })),
     },
   ],
 }))
@@ -433,7 +442,7 @@ const { chartEl: hotBarEl } = useEchart(hotBarOption)
             </div>
             <ul class="donut-legend">
               <li v-for="(item, index) in categoryStock" :key="item.categoryName">
-                <i class="legend-dot" :style="{ backgroundColor: donutColors[index] }" aria-hidden="true"></i>
+                <i class="legend-dot" :style="{ backgroundColor: donutColorAt(index) }" aria-hidden="true"></i>
                 <span class="legend-name">{{ item.categoryName }}</span>
                 <b class="legend-value num">{{ formatInt(item.stockNum) }}</b>
               </li>

@@ -4,8 +4,9 @@
 const productModel = require('../models/productModel');
 const categoryModel = require('../models/categoryModel');
 const supplierModel = require('../models/supplierModel');
+const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
-const { ok, page } = require('../utils/result');
+const { BizError, ok, page } = require('../utils/result');
 const { toStr, toInt, toNum, round2, paging, assert } = require('../utils/validate');
 
 /**
@@ -96,9 +97,14 @@ async function detail(req, res) {
   return ok(res, product);
 }
 
-/* 扩展：在售商品下拉选项（收银开单选品用） */
+/**
+ * 扩展：商品下拉选项
+ * - 默认只返回在售商品（收银开单选品）
+ * - includeOffline=1 时包含下架商品（出入库补货用：库存为 0 被自动下架的商品必须能再入库）
+ */
 async function options(req, res) {
-  return ok(res, await productModel.options());
+  const includeOffline = toInt(req.query.includeOffline, 0) === 1;
+  return ok(res, await productModel.options({ includeOffline }));
 }
 
 /* 4.3.3 新增商品 */
@@ -137,7 +143,30 @@ async function update(req, res) {
     assert(!(await productModel.existsCode(payload.productCode, id)), '商品条码已存在');
   }
 
-  await productModel.update(null, id, payload);
+  const operator = req.user.realName || req.user.username || '';
+
+  await transaction(async (conn) => {
+    // 行锁：防止编辑库存与并发出入库/结账互相覆盖
+    const before = await productModel.findByIdForUpdate(conn, id);
+    if (!before) throw new BizError('商品不存在');
+
+    await productModel.update(conn, id, payload);
+
+    // 编辑时直接改了库存 → 补一条调整流水，保证流水账与库存始终可对账
+    const diff = payload.stockNum - before.stock_num;
+    if (diff !== 0) {
+      await stockModel.insertLog(conn, {
+        productId: id,
+        changeType: diff > 0 ? 1 : 2,
+        quantity: Math.abs(diff),
+        beforeNum: before.stock_num,
+        afterNum: payload.stockNum,
+        operator,
+        remark: '商品档案编辑调整库存',
+      });
+    }
+  });
+
   return ok(res, null);
 }
 

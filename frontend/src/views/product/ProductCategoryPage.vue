@@ -15,7 +15,6 @@ import {
   addCategory,
   deleteCategory,
   getCategoryList,
-  getProductList,
   updateCategory,
 } from '@/api/modules/product'
 
@@ -37,25 +36,13 @@ const COLOR_OPTIONS = [
 const loading = ref(false)
 const categories = ref([])
 
-/** 分类 id → 该分类下商品数量 */
-const productCountMap = ref({})
-
 async function loadData() {
   loading.value = true
   try {
-    // 分类全量 + 商品各分类数量（商品总量有限，一次拉全量统计即可）
-    const [cats, products] = await Promise.all([
-      getCategoryList(),
-      getProductList({ pageNum: 1, pageSize: 200 }),
-    ])
+    // 关联商品数由后端 SQL 聚合返回（productCount），不再拉商品列表估算，
+    // 避免商品数超过单页上限时统计不准
+    const cats = await getCategoryList()
     categories.value = Array.isArray(cats) ? cats : []
-
-    const counter = {}
-    ;(products?.list || []).forEach((p) => {
-      if (p.categoryId == null) return
-      counter[p.categoryId] = (counter[p.categoryId] || 0) + 1
-    })
-    productCountMap.value = counter
   } finally {
     loading.value = false
   }
@@ -64,8 +51,8 @@ async function loadData() {
 onMounted(loadData)
 
 /** 某分类下的商品数量 */
-function getCategoryProductCount(categoryId) {
-  return productCountMap.value[categoryId] || 0
+function getCategoryProductCount(category) {
+  return Number(category?.productCount) || 0
 }
 
 /* ---------------- 筛选 ---------------- */
@@ -87,9 +74,15 @@ const sortState = reactive({ prop: 'sort', order: 'ascending' })
 
 const sortedCategories = computed(() => {
   const list = [...filteredCategories.value]
-  if (!sortState.prop) return list
+  if (!sortState.prop || !sortState.order) return list
   const dir = sortState.order === 'descending' ? -1 : 1
-  return list.sort((a, b) => (a[sortState.prop] > b[sortState.prop] ? dir : -dir))
+  return list.sort((a, b) => {
+    const va = a[sortState.prop]
+    const vb = b[sortState.prop]
+    // 相等时必须返回 0，否则相等项会被当成「小于」，排序结果不稳定
+    if (va === vb) return 0
+    return va > vb ? dir : -dir
+  })
 })
 
 function handleSortChange({ prop, order }) {
@@ -300,7 +293,7 @@ function goProductList(categoryId) {
         <el-table-column label="关联商品" align="right" width="120">
           <template #default="{ row }">
             <span class="num link-num" @click="goProductList(row.id)">
-              {{ getCategoryProductCount(row.id) }}
+              {{ getCategoryProductCount(row) }}
             </span>
             <span class="unit">件</span>
           </template>
@@ -316,7 +309,7 @@ function goProductList(categoryId) {
           <template #default="{ row }">
             <el-button type="primary" text :icon="Edit" @click="openEdit(row)">编辑</el-button>
             <el-tooltip
-              v-if="getCategoryProductCount(row.id) > 0"
+              v-if="getCategoryProductCount(row) > 0"
               content="该分类下存在商品，无法删除"
               placement="top"
             >

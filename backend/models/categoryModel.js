@@ -13,9 +13,17 @@ const FIELDS = `
   create_time AS createTime
 `;
 
-/** 全量列表（按 sort 升序） */
+/**
+ * 全量列表（按 sort 升序）
+ * productCount：该分类下的商品数，由 SQL 聚合得出（前端不再拉商品列表估算）
+ */
 async function listAll() {
-  return query(`SELECT ${FIELDS} FROM category ORDER BY sort ASC, id ASC`);
+  return query(
+    `SELECT ${FIELDS},
+            (SELECT COUNT(*) FROM product p WHERE p.category_id = category.id) AS productCount
+     FROM category
+     ORDER BY sort ASC, id ASC`
+  );
 }
 
 /** 按 id 查 */

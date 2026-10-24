@@ -3,7 +3,7 @@
  *
  * 商品：
  * - GET    /api/product/list     分页，入参 { pageNum, pageSize, productName?, productCode?, categoryId?, status? }
- * - GET    /api/product/options  在售商品精简列表（收银开单 / 出入库选品）
+ * - GET    /api/product/options  商品精简列表（收银开单默认仅看在售；出入库传 includeOffline=1 含下架商品）
  * - GET    /api/product/:id      详情
  * - POST   /api/product          新增
  * - PUT    /api/product          编辑（id 在 body）
@@ -24,9 +24,12 @@ export function getProductList(params) {
   return get('/product/list', params)
 }
 
-/** 在售商品下拉选项（含 salePrice / stockNum，可直接加入购物车） */
-export function getProductOptions() {
-  return get('/product/options')
+/**
+ * 商品下拉选项（含 salePrice / stockNum，可直接加入购物车）
+ * @param {{ includeOffline?: number }} [params] includeOffline=1 时包含已下架商品（出入库补货用）
+ */
+export function getProductOptions(params) {
+  return get('/product/options', params)
 }
 
 /** 商品详情 */

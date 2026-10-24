@@ -32,7 +32,9 @@ async function list({ pageNum, pageSize, offset, supplierName, contactPerson }) 
   const total = countRows[0].total;
 
   const rows = await query(
-    `SELECT ${FIELDS} FROM supplier ${whereSql}
+    `SELECT ${FIELDS},
+            (SELECT COUNT(*) FROM product p WHERE p.supplier_id = supplier.id) AS productCount
+     FROM supplier ${whereSql}
      ORDER BY create_time DESC, id DESC
      LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]

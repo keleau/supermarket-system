@@ -114,7 +114,8 @@ function handleQuery() {
 }
 
 function handleReset() {
-  filterForm.dateRange = []
+  // 恢复默认近 7 天，而不是清空日期（清空后后端仍按近 7 天统计，选择器却显示为空，口径不一致）
+  filterForm.dateRange = defaultRange()
   filterForm.categoryId = ''
   filterForm.productName = ''
   handleQuery()
@@ -259,7 +260,9 @@ const trendOption = computed(() => {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       formatter: (params) => {
-        const day = list.find((d) => d.date === params[0].axisValue) || { cost: 0, sale: 0, profit: 0 }
+        // x 轴标签是 MM-DD（供展示），不能用 axisValue 反查完整日期；
+        // 用 dataIndex 直接按位置取当天数据，才能拿到正确的成本 / 毛利
+        const day = list[params[0]?.dataIndex] || { cost: 0, sale: 0, profit: 0 }
         const lines = params.map((p) => `${p.marker}${p.seriesName}　¥${money(p.value)}`)
         return [
           `<b>${day.date}</b>`,

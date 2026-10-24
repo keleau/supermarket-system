@@ -31,7 +31,8 @@ const productOptions = ref([])
 const supplierOptions = ref([])
 
 async function loadOptions() {
-  const requests = [getProductOptions()]
+  // 出入库必须能看到已下架商品：库存扣到 0 时后端会自动下架，若只拉在售商品就永远无法补货
+  const requests = [getProductOptions({ includeOffline: 1 })]
   // 出库不需要供应商，入库才拉
   if (isInbound.value) requests.push(getSupplierOptions())
   const [products, suppliers] = await Promise.all(requests)
@@ -39,9 +40,10 @@ async function loadOptions() {
   supplierOptions.value = Array.isArray(suppliers) ? suppliers : []
 }
 
-/** 选品下拉展示文案：名称 + 当前库存 */
+/** 选品下拉展示文案：名称 + 下架标记 + 当前库存 */
 function productLabel(product) {
-  return `${product.productName}（当前库存 ${product.stockNum}${product.unit || ''}）`
+  const offline = product.status === 0 ? '（已下架）' : ''
+  return `${product.productName}${offline}（当前库存 ${product.stockNum}${product.unit || ''}）`
 }
 
 /* ---------------- 列表（服务端分页） ---------------- */
@@ -170,7 +172,7 @@ function applyBarcode(code) {
   if (!key) return
   const hit = productOptions.value.find((p) => String(p.productCode) === key)
   if (!hit) {
-    ElMessage.warning(`未找到条码「${key}」对应的在售商品`)
+    ElMessage.warning(`未找到条码「${key}」对应的商品`)
     return
   }
   form.productId = hit.id
@@ -338,7 +340,7 @@ async function handleSubmit() {
             clearable
             @keyup.enter="handleBarcodeEnter"
           />
-          <span class="form-hint">也可手动输入条码后回车，仅支持已录入且在售的商品</span>
+          <span class="form-hint">也可手动输入条码后回车；已下架商品同样可入库补货</span>
         </el-form-item>
         <el-form-item :label="`${isInbound ? '入库' : '出库'}商品`" prop="productId">
           <el-select v-model="form.productId" filterable placeholder="请选择商品" style="width: 100%">

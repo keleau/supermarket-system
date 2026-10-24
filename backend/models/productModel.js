@@ -191,8 +191,13 @@ async function countAll() {
   return rows[0].total;
 }
 
-/** 商品下拉选项（收银开单用） */
-async function options() {
+/**
+ * 商品下拉选项
+ * @param {{ includeOffline?: boolean }} [opts]
+ *   includeOffline=true 时包含已下架商品 —— 出入库需要给「因库存为 0 被自动下架」的商品补货，
+ *   收银开单则必须保持只返回在售商品。
+ */
+async function options({ includeOffline = false } = {}) {
   return query(
     `SELECT p.id,
             p.product_code AS productCode,
@@ -200,10 +205,11 @@ async function options() {
             p.sale_price   AS salePrice,
             p.stock_num    AS stockNum,
             p.unit,
+            p.status,
             c.name         AS categoryName
      FROM product p
      LEFT JOIN category c ON c.id = p.category_id
-     WHERE p.status = 1
+     ${includeOffline ? '' : 'WHERE p.status = 1'}
      ORDER BY p.id ASC`
   );
 }

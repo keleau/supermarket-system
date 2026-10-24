@@ -37,6 +37,11 @@
  * @property {string} position
  * @property {string} avatar
  * @property {string} phone
+ * @property {string} [gender]
+ * @property {string} [birthday]
+ * @property {string} [idCard]
+ * @property {string} [address]
+ * @property {string} [remark]
  *
  * @typedef {Object} ProductVO        商品信息
  * @property {number} id
@@ -63,6 +68,7 @@
  * @property {string} description
  * @property {number} sort            越小越靠前
  * @property {number} status          1 启用 0 禁用
+ * @property {number} productCount    该分类下商品数（后端聚合，用于删除拦截与展示）
  * @property {string} [createTime]
  *
  * @typedef {Object} InboundPayload   POST /api/stock/inbound 入参
@@ -110,7 +116,7 @@
  * @typedef {Object} SaleItemPayload  POST /api/sale/record 销售明细项
  * @property {number} productId
  * @property {number} quantity        必须 > 0
- * @property {number} [salePrice]     不传则取商品当前售价；传入则以传入为准
+ * @property {number} [salePrice]     仅作前端展示参考：后端一律取商品表当前售价，传入值会被忽略（防篡改）
  *
  * @typedef {Object} SaleRecordPayload POST /api/sale/record 入参（收银结账）
  * @property {Array<SaleItemPayload>} items  销售商品明细（至少 1 项）
@@ -164,6 +170,7 @@
  * @property {string} phone
  * @property {string} [address]
  * @property {string} [remark]
+ * @property {number} productCount    名下商品数（后端聚合，用于删除拦截与展示）
  * @property {string} [createTime]
  *
  * @typedef {Object} SysUserVO        系统用户（仅管理员可管理）

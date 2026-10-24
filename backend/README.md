@@ -198,7 +198,7 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 
 1. **操作人姓名**：`operator` 字段统一取「姓名，缺省则取登录账号」（`realName || username`），出库流水与销售单保持一致口径。
    注：`api.md` 示例中流水写 `admin`、销售单写 `张敏`，此处按统一口径处理。
-2. **扩展接口**：额外提供了 `GET /api/product/options`（在售商品精简列表，供收银开单选品）与 `GET /api/health`（健康检查）。二者为增量接口，不影响既有契约。
+2. **扩展接口**：额外提供了 `GET /api/product/options`（商品精简列表：默认在售供收银开单选品，`includeOffline=1` 含下架商品供出入库补货）与 `GET /api/health`（健康检查）。二者为增量接口，不影响既有契约。
 
 ---
 

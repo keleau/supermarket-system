@@ -16,7 +16,6 @@ import {
   getSupplierList,
   updateSupplier,
 } from '@/api/modules/supplier'
-import { getProductList } from '@/api/modules/product'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
@@ -30,9 +29,6 @@ const pagination = reactive({ pageNum: 1, pageSize: 10 })
 
 const filterForm = reactive({ supplierName: '', contactPerson: '' })
 const appliedFilters = reactive({ supplierName: '', contactPerson: '' })
-
-/** 供应商 id → 名下商品数量 */
-const productCountMap = ref({})
 
 async function loadList() {
   loading.value = true
@@ -48,17 +44,6 @@ async function loadList() {
   } finally {
     loading.value = false
   }
-}
-
-/** 统计各供应商名下商品数量（商品总量有限，一次拉全量统计即可） */
-async function loadProductCounts() {
-  const res = await getProductList({ pageNum: 1, pageSize: 200 })
-  const counter = {}
-  ;(res?.list || []).forEach((p) => {
-    if (p.supplierId == null) return
-    counter[p.supplierId] = (counter[p.supplierId] || 0) + 1
-  })
-  productCountMap.value = counter
 }
 
 function handleQuery() {
@@ -85,10 +70,7 @@ function handleSizeChange(pageSize) {
   loadList()
 }
 
-onMounted(() => {
-  loadList()
-  loadProductCounts()
-})
+onMounted(loadList)
 
 /* ---------------- 新增 / 编辑弹窗 ---------------- */
 
@@ -206,7 +188,6 @@ async function handleDelete(row) {
     ElMessage.success('供应商已删除')
     if (list.value.length === 1 && pagination.pageNum > 1) pagination.pageNum -= 1
     await loadList()
-    await loadProductCounts()
   } catch {
     /* 存在关联商品时后端返回错误文案，由拦截器弹出 */
   }
@@ -214,9 +195,9 @@ async function handleDelete(row) {
 
 /* ---------------- 关联商品统计 ---------------- */
 
-/** 统计某供应商名下商品数量 */
-function supplierProductCount(supplierId) {
-  return productCountMap.value[supplierId] || 0
+/** 名下商品数量由后端 SQL 聚合返回（productCount），不再拉商品列表估算 */
+function supplierProductCount(row) {
+  return Number(row?.productCount) || 0
 }
 </script>
 
@@ -290,7 +271,7 @@ function supplierProductCount(supplierId) {
         </el-table-column>
         <el-table-column label="关联商品" align="right" width="100">
           <template #default="{ row }">
-            <span class="num">{{ supplierProductCount(row.id) }}</span>
+            <span class="num">{{ supplierProductCount(row) }}</span>
             <span class="unit">件</span>
           </template>
         </el-table-column>
@@ -303,7 +284,7 @@ function supplierProductCount(supplierId) {
           <template #default="{ row }">
             <el-button text type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>
             <el-tooltip
-              v-if="supplierProductCount(row.id) > 0"
+              v-if="supplierProductCount(row) > 0"
               content="该供应商下存在关联商品，无法删除"
               placement="top"
             >

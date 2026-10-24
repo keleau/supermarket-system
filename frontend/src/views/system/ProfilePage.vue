@@ -57,6 +57,13 @@ async function loadProfile() {
       position: info.position,
       avatar: info.avatar || AVATAR_OPTIONS[0],
       phone: info.phone || '',
+      // 后端 /user/info 已返回这些字段，必须回填，否则展示页永远显示「未填写」、
+      // 编辑时还会以空值覆盖原有资料
+      gender: info.gender || '',
+      birthday: info.birthday || '',
+      idCard: info.idCard || '',
+      address: info.address || '',
+      remark: info.remark || '',
     })
   } finally {
     loading.value = false
