@@ -12,7 +12,32 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_HOST: '%'
+          MYSQL_DATABASE: supermarket_admin
+          TZ: Asia/Shanghai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: supermarket_admin
+      DB_TIME_ZONE: '+08:00'
+      TZ: Asia/Shanghai
 
     defaults:
       run:
@@ -32,5 +57,11 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 运行测试
+      - name: 运行单元测试
         run: npm test
+
+      - name: 初始化测试数据库
+        run: npm run db:init
+
+      - name: 运行接口冒烟测试
+        run: npm run test:smoke
