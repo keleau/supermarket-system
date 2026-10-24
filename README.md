@@ -1,5 +1,7 @@
 # 超市管家 — 超市商品后台管理系统
 
+[![Backend Tests](https://github.com/keleau/supermarket/actions/workflows/backend-test.yml/badge.svg?branch=main)](https://github.com/keleau/supermarket/actions/workflows/backend-test.yml)
+
 基于 **Vue 3 + Express + MySQL** 的前后端分离超市商品后台管理系统，提供商品、库存、供应商、销售的统一管理，并通过数据看板辅助经营决策。
 
 ## 技术栈
@@ -71,6 +73,11 @@ npm run dev
 ```
 
 浏览器访问终端提示的地址（默认 `http://localhost:5173`）即可进入登录页。
+
+## 质量保障
+
+- 后端使用 Node.js 原生测试运行器，45 个用例覆盖销售明细归一化、库存预警、鉴权失效、日期校验与登录限流。
+- GitHub Actions 在每次 push / PR 时自动安装依赖并执行全部后端测试。
 
 ## 相关文档
 
