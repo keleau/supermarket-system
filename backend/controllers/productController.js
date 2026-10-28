@@ -146,6 +146,10 @@ async function update(req, res) {
   assertCostUnchanged(toNum(req.body.costPrice, null), exist.costPrice);
 
   const payload = buildPayload(req.body);
+  // 不传状态时保留原状态，避免 API 调用方漏传 status 把下架商品误上架
+  if (req.body.status === undefined || req.body.status === null || req.body.status === '') {
+    payload.status = exist.status;
+  }
   // 库存为 0 时保持下架；库存 > 0 时允许手动下架/上架
   if (exist.stockNum <= 0) payload.status = 0;
   await assertRelations(payload);

@@ -31,7 +31,7 @@ export const overview = {
   inboundCompareRate: -4.2, // 负值演示"环比下跌"红色向下箭头状态
   productKindCount: 1268, // 商品总种类（SKU）
   warnProductCount: 23, // 库存预警商品数量
-  pendingStockCount: 47, // 待盘点商品数量
+  pendingStockCount: 47, // 待补货商品数量
 }
 
 /** 近 7 日销售金额趋势（面积图） */

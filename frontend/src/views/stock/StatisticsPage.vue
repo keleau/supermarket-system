@@ -73,7 +73,7 @@ const statCards = computed(() => {
     { key: 'totalStock', label: '库存总量', value: stats.value.totalStock || 0, unit: '件', icon: Box, tone: 'brand' },
     { key: 'kind', label: '商品总种类', value: productKindCount.value, unit: '种', icon: Goods, tone: 'info' },
     { key: 'warn', label: '库存预警商品', value: stats.value.warnProductCount || 0, unit: '种', icon: Warning, tone: 'warning' },
-    { key: 'pending', label: '待盘点商品', value: stats.value.pendingProductCount || 0, unit: '种', icon: DocumentChecked, tone: 'danger' },
+    { key: 'pending', label: '待补货商品', value: stats.value.pendingProductCount || 0, unit: '种', icon: DocumentChecked, tone: 'danger' },
     { key: 'value', label: '库存总价值', value: stats.value.totalStockValue || 0, unit: '元', icon: Money, tone: 'success', isMoney: true },
   ]
   // 库存总价值由成本计算，非管理员不展示
@@ -202,7 +202,7 @@ const { chartEl: donutEl } = useEchart(donutOption)
 onMounted(() => {
   const filter = route.query.filter
   if (filter === 'warn') filterForm.status = 1
-  else if (filter === 'pending') filterForm.status = '' // 待盘点 = 全部预警项
+  else if (filter === 'pending') filterForm.status = '' // 待补货 = 全部预警项
 })
 </script>
 

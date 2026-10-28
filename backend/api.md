@@ -75,23 +75,24 @@ Authorization: Bearer <token>
 
 **岗位权限矩阵：**
 
-| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 商品/分类/供应商 | 用户管理 |
-|------|----------|------------|----------|------|------|----------|------------------|----------|
-| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 读写 | 是 |
-| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 只读 | 否 |
-| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 只读 | 否 |
-| 采购   | 否 | 否 | 否 | 是 | 否 | 是 | 只读 | 否 |
-| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 只读 | 否 |
-| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 否 |
+| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 库存盘点 | 商品/分类/供应商 | 用户管理 |
+|------|----------|------------|----------|------|------|----------|----------|------------------|----------|
+| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 制单+审核 | 读写 | 是 |
+| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 制单 | 只读 | 否 |
+| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 否 | 只读 | 否 |
+| 采购   | 否 | 否 | 否 | 是 | 否 | 是 | 否 | 只读 | 否 |
+| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 只读 | 否 |
+| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 只读 | 否 |
 
 > 管理员（`role = admin` 或 `position = 管理员`）拥有全部权限（`*`）。
 > 登录 / 获取用户信息接口返回 `permissions` 权限码数组，前端用它控制菜单、路由和按钮；后端接口按同一矩阵再校验一次。
 > 收银员的「销售单查看」只限本人；会计/管理员可看全部。
+> 操作日志仅管理员可查。
 
 **财务字段脱敏：**
 
-- 非管理员响应会剔除商品 `costPrice`、销售明细 `costPrice`、仪表盘利润字段、库存统计 `totalStockValue`、出入库流水 `inboundPrice`。
-- `/api/sale/statistics` 仅管理员可访问，其他角色返回 `code=403`。
+- 非管理员响应会剔除商品 `costPrice`、销售明细 `costPrice`、仪表盘利润字段、库存统计 `totalStockValue`、出入库流水 `inboundPrice`、盘点 `costPrice/diffAmount/totalGainAmount/totalLossAmount`。
+- `/api/sale/statistics` 仅管理员可访问，其他角色返回 `code=403`；供应商进货金额排行也仅管理员可访问。
 
 ### 2.5 字段命名
 
@@ -266,6 +267,65 @@ CREATE TABLE `sale_item` (
   KEY `idx_sale_record` (`sale_record_id`),
   KEY `idx_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售明细表';
+
+-- ==================== 库存盘点单 ====================
+CREATE TABLE `stocktake_order` (
+  `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `take_no`           VARCHAR(30)   NOT NULL COMMENT '盘点单号',
+  `status`            TINYINT       NOT NULL DEFAULT 0 COMMENT '0 草稿 / 1 已提交 / 2 已审核 / 3 已取消',
+  `operator`          VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '制单人',
+  `auditor`           VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '审核人',
+  `audit_time`        DATETIME      NULL COMMENT '审核时间',
+  `total_gain_qty`    INT           NOT NULL DEFAULT 0 COMMENT '盘盈总数量',
+  `total_loss_qty`    INT           NOT NULL DEFAULT 0 COMMENT '盘亏总数量',
+  `total_gain_amount` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '盘盈总金额',
+  `total_loss_amount` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '盘亏总金额',
+  `remark`            VARCHAR(200)  NOT NULL DEFAULT '' COMMENT '备注',
+  `create_time`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_take_no` (`take_no`),
+  KEY `idx_status` (`status`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存盘点单';
+
+-- ==================== 库存盘点明细 ====================
+CREATE TABLE `stocktake_item` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `order_id`     BIGINT UNSIGNED NOT NULL COMMENT '盘点单 id',
+  `product_id`   BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
+  `product_name` VARCHAR(50)   NOT NULL DEFAULT '' COMMENT '商品名称快照',
+  `unit`         VARCHAR(6)    NOT NULL DEFAULT '个' COMMENT '单位快照',
+  `book_qty`     INT           NOT NULL DEFAULT 0 COMMENT '账面数',
+  `actual_qty`   INT           NOT NULL DEFAULT 0 COMMENT '实盘数',
+  `diff_qty`     INT           NOT NULL DEFAULT 0 COMMENT '实盘数 - 账面数',
+  `cost_price`   DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '审核时加权成本快照',
+  `diff_amount`  DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '盈亏金额',
+  `reason`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '盈亏原因',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_product` (`order_id`, `product_id`),
+  KEY `idx_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存盘点明细';
+
+-- ==================== 操作日志 ====================
+CREATE TABLE `operation_log` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`       BIGINT UNSIGNED NULL COMMENT '操作人 id',
+  `username`      VARCHAR(20)  NOT NULL DEFAULT '' COMMENT '操作人账号',
+  `role`          VARCHAR(10)  NOT NULL DEFAULT '' COMMENT '角色',
+  `position`      VARCHAR(20)  NOT NULL DEFAULT '' COMMENT '职位',
+  `module`        VARCHAR(20)  NOT NULL COMMENT '模块',
+  `action`        VARCHAR(30)  NOT NULL COMMENT '动作',
+  `biz_no`        VARCHAR(40)  NOT NULL DEFAULT '' COMMENT '业务单号或对象标识',
+  `before_status` TINYINT      NULL COMMENT '变更前状态',
+  `after_status`  TINYINT      NULL COMMENT '变更后状态',
+  `detail`        VARCHAR(500) NOT NULL DEFAULT '' COMMENT '操作摘要',
+  `ip`            VARCHAR(45)  NOT NULL DEFAULT '' COMMENT '操作 IP',
+  `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_module_action` (`module`, `action`),
+  KEY `idx_username` (`username`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
 ```
 
 ### 3.2 字段 → 接口映射
@@ -1375,7 +1435,7 @@ CREATE TABLE `sale_item` (
 | totalStock          | 库存总量（Σ stockNum） |
 | warnProductCount    | 预警商品数（0 < stockNum < warnNum） |
 | outProductCount     | 缺货商品数（stockNum = 0） |
-| pendingProductCount | 待盘点商品数（stockNum < warnNum，含缺货） |
+| pendingProductCount | 待补货商品数（stockNum < warnNum，含缺货；不是盘点任务数） |
 | totalStockValue     | 库存总价值（Σ costPrice × stockNum） |
 
 **业务校验规则：** 实时聚合，无特殊校验。
@@ -1777,7 +1837,7 @@ CREATE TABLE `sale_item` (
 | monthInboundQuantity / inboundCompareRate | 本月收货总数量（仅采购入库/期初入库，不含销售退货）/ 环比(%) |
 | productKindCount | 商品总种类（SKU 数） |
 | warnProductCount | 库存预警商品数量 |
-| pendingStockCount | 待盘点商品数量 |
+| pendingStockCount | 待补货商品数量（库存低于预警/缺货，不是盘点任务数） |
 
 **业务校验规则：** 环比可为负值（正增负减）；趋势线序列为等间隔采样点数组。
 
@@ -1890,6 +1950,49 @@ CREATE TABLE `sale_item` (
 ```
 
 **业务校验规则：** 按售出数量 saleQuantity 降序取前 5（区间可取近 30 天）。
+
+---
+
+### 4.8 库存盘点模块
+
+状态流转：`0 草稿 → 1 已提交 → 2 已审核 / 3 已取消`。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET  | `/api/stocktake/list` | stocktake:read | 盘点单分页 |
+| GET  | `/api/stocktake/:id` | stocktake:read | 详情（含明细） |
+| POST | `/api/stocktake` | stocktake:create | 生成任务 `{ categoryId?, remark? }` |
+| PUT  | `/api/stocktake/:id/items` | stocktake:create | 保存实盘 `{ items: [{ id, actualQty, reason }] }` |
+| POST | `/api/stocktake/:id/submit` | stocktake:create | 提交 |
+| POST | `/api/stocktake/:id/audit` | stocktake:audit | 审核并修正库存（仅管理员） |
+| POST | `/api/stocktake/:id/cancel` | stocktake:create | 取消 |
+
+**业务规则：**
+
+1. 生成任务时快照当前库存与加权成本，实盘数默认等于账面数。
+2. 只有草稿可以保存实盘；提交后不能修改。
+3. 有盈亏的行必须填写原因（破损/丢失/赠品/计量误差/其他）才能提交。
+4. 审核时按「审核时库存」与实盘数计算差额，盘盈写 `biz_type=4`、盘亏写 `biz_type=5`，并修正库存；审核后不能重复审核。
+5. 非管理员看不到盘点成本与盈亏金额，只能看到数量。
+
+### 4.9 操作日志
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/operation-log/list` | admin | 分页查询，支持 module/action/username/startTime/endTime |
+
+- 模块：`product` / `stock` / `sale` / `stocktake`
+- 动作：`create` / `update` / `delete` / `inbound` / `outbound` / `return` / `void` / `submit` / `audit` / `cancel`
+- 日志只读，不提供修改和删除接口。
+
+### 4.10 经营分析扩展
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/stock/slow-moving?days=30&limit=10` | stock:read | 当前有库存、近 N 天没有正常销售的商品 |
+| GET | `/api/dashboard/supplier-ranking?days=30&limit=10` | admin | 近 N 天供应商采购入库金额排行（只统计 `biz_type=1`） |
+
+> 供应商进货金额属于成本数据，仅管理员可看；积压商品只涉及数量，仓管/采购/后勤/会计可看。
 
 ---
 

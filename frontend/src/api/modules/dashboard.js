@@ -9,7 +9,7 @@ import { get } from '../request'
 /**
  * 顶部指标聚合（一次返回，减少首屏请求）
  * 返回 DashboardOverview：今日销售额及环比、本月利润及环比、
- * 本月收货总数量、商品总种类、库存预警数量、待盘点数量，以及两个迷你趋势线序列
+ * 本月收货总数量、商品总种类、库存预警数量、待补货数量，以及两个迷你趋势线序列
  */
 export function getDashboardOverview() {
   return get('/dashboard/overview')

@@ -147,10 +147,15 @@ const detail = ref(null)
 const saveLoading = ref(false)
 const actionLoading = ref('')
 
-const editable = computed(() => detail.value?.status === 0 && canCreate.value)
+const editable = computed(() =>
+  detail.value?.status === 0 &&
+  (canAudit.value || (canCreate.value && detail.value.operator === userStore.realName))
+)
 
 function showCancel(row) {
-  if (row.status === 0) return canCreate.value || canAudit.value
+  if (row.status === 0) {
+    return canAudit.value || (canCreate.value && row.operator === userStore.realName)
+  }
   if (row.status === 1) return canAudit.value
   return false
 }
@@ -175,19 +180,36 @@ function recalcItem(row) {
 }
 
 async function saveItems() {
-  if (!detail.value) return
+  if (!detail.value) return false
+
+  const invalid = detail.value.items.find((it) => {
+    const value = it.actualQty
+    return (
+      value === null ||
+      value === undefined ||
+      value === '' ||
+      !Number.isInteger(Number(value)) ||
+      Number(value) < 0
+    )
+  })
+  if (invalid) {
+    ElMessage.warning(`商品「${invalid.productName}」的实盘数量不能为空，且必须是非负整数`)
+    return false
+  }
+
   saveLoading.value = true
   try {
     await updateStocktakeItems(detail.value.id, {
       items: detail.value.items.map((it) => ({
         id: it.id,
-        actualQty: Number(it.actualQty) || 0,
+        actualQty: Number(it.actualQty),
         reason: it.reason || '',
       })),
     })
     ElMessage.success('实盘数量已保存')
     await openDetail(detail.value.id)
     await loadList()
+    return true
   } finally {
     saveLoading.value = false
   }
@@ -195,11 +217,13 @@ async function saveItems() {
 
 async function handleSubmit() {
   if (!detail.value) return
+  let saved = false
   try {
-    await saveItems()
+    saved = await saveItems()
   } catch {
     return
   }
+  if (!saved) return
   try {
     await ElMessageBox.confirm('提交后不能再修改实盘数量，确认提交？', '提交盘点单', {
       type: 'warning',
@@ -218,6 +242,15 @@ async function handleSubmit() {
     await loadList()
   } finally {
     actionLoading.value = ''
+  }
+}
+
+async function quickAudit(row) {
+  try {
+    await openDetail(row.id)
+    await handleAudit()
+  } catch {
+    // 详情加载失败或用户取消审核，错误提示由 request 拦截器负责
   }
 }
 
@@ -358,7 +391,7 @@ function moneyOrDash(value) {
               text
               type="success"
               :loading="actionLoading === 'audit'"
-              @click="openDetail(row.id).then(() => handleAudit())"
+              @click="quickAudit(row)"
             >
               审核
             </el-button>
@@ -436,7 +469,11 @@ function moneyOrDash(value) {
           <el-table :data="detail.items" class="item-table" max-height="460">
             <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
             <el-table-column prop="unit" label="单位" width="70" align="center" />
-            <el-table-column prop="bookQty" label="账面数" width="90" align="right" />
+            <el-table-column label="账面数" width="90" align="right">
+              <template #default="{ row }">
+                <span class="num">{{ formatInt(row.bookQty) }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="实盘数" width="150" align="right">
               <template #default="{ row }">
                 <el-input-number

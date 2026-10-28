@@ -8,7 +8,7 @@
  * 业务：提交后由后端在事务内更新库存并生成流水，前端只刷新列表
  * 权限：管理员与操作员均可提交
  */
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -155,6 +155,20 @@ onMounted(async () => {
   if (isInbound.value && userStore.can('stock:in') && Number.isInteger(productId) && productId > 0) {
     openCreate(productId)
   }
+})
+
+// 入库/出库共用同一个组件：路由切换时组件会被复用，必须手动重置筛选并重新加载
+watch(isInbound, async () => {
+  filterForm.productName = ''
+  filterForm.bizType = ''
+  filterForm.dateRange = []
+  applied.productName = ''
+  applied.bizType = ''
+  applied.startTime = ''
+  applied.endTime = ''
+  pagination.pageNum = 1
+  await loadOptions()
+  loadList()
 })
 
 /* ---------------- 新增入库 / 出库弹窗 ---------------- */

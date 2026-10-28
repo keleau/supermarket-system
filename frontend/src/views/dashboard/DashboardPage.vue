@@ -132,12 +132,12 @@ const miniMetrics = computed(() => [
   },
   {
     key: 'pending',
-    label: '待盘点商品',
+    label: '待补货商品',
     value: overview.value.pendingStockCount || 0,
     unit: '种',
     icon: 'DocumentChecked',
     tone: 'info',
-    // 跳库存统计并自动筛选待盘点商品
+    // 跳库存统计并自动筛选待补货商品
     to: userStore.can('stock:read')
       ? { path: '/stock/statistics', query: { filter: 'pending' } }
       : null,

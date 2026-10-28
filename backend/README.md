@@ -55,7 +55,7 @@ express demo/
 │
 ├── db/
 │   ├── pool.js             连接池 + query/execute/transaction 封装
-│   ├── schema.sql          建表 SQL（7 张表）
+│   ├── schema.sql          建表 SQL（10 张表）
 │   ├── seed.sql            预置基础数据 SQL
 │   ├── migrations/         增量迁移脚本（已有数据库升级用）
 │   └── init.js             一键初始化脚本（建库→建表→预置→写用户）
@@ -63,19 +63,19 @@ express demo/
 ├── routers/                路由层：请求分发
 │   ├── index.js            汇总挂载到 /api
 │   ├── userRouter.js  categoryRouter.js  productRouter.js
-│   ├── supplierRouter.js  stockRouter.js  saleRouter.js
-│   └── dashboardRouter.js
+│   ├── supplierRouter.js  stockRouter.js  stocktakeRouter.js  saleRouter.js
+│   ├── dashboardRouter.js  operationLogRouter.js
 │
 ├── controllers/            控制器层：参数校验、业务逻辑、事务控制
 │   ├── userController.js       categoryController.js
 │   ├── productController.js    supplierController.js
-│   ├── stockController.js      saleController.js
-│   └── dashboardController.js
+│   ├── stockController.js      stocktakeController.js  saleController.js
+│   ├── dashboardController.js  operationLogController.js
 │
 ├── models/                 模型层：SQL 与数据持久化
 │   ├── userModel.js       categoryModel.js   productModel.js
-│   ├── supplierModel.js   stockModel.js      saleModel.js
-│   └── dashboardModel.js
+│   ├── supplierModel.js   stockModel.js      stocktakeModel.js  saleModel.js
+│   ├── dashboardModel.js  operationLogModel.js
 │
 ├── middleware/
 │   ├── auth.js             JWT 鉴权 + 角色鉴权 + token 黑名单
@@ -85,6 +85,12 @@ express demo/
 │   ├── result.js           统一响应体 + BizError
 │   ├── validate.js         参数校验与类型转换
 │   ├── role.js             职位 ↔ 角色映射
+│   ├── permissions.js      岗位权限矩阵
+│   ├── cost.js             移动加权平均成本
+│   ├── finance.js          成本/毛利字段脱敏
+│   ├── stockBiz.js         库存流水业务类型
+│   ├── stocktake.js        盘点差异计算
+│   ├── operationLog.js     操作日志写入
 │   ├── date.js             日期工具
 │   └── asyncHandler.js     异步 Controller 包装
 │
@@ -204,7 +210,7 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 
 ## 四、接口清单
 
-完整字段与示例见 [`api.md`](api.md)，共 43 个接口：
+完整字段与示例见 [`api.md`](api.md)，共 55 个接口（含健康检查）：
 
 | 模块 | 前缀 | 数量 | 接口 |
 |------|------|------|------|
@@ -212,9 +218,11 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 | 分类 | `/api/category` | 4 | list、新增、编辑、删除 |
 | 商品 | `/api/product` | 5(+1) | list、detail、新增、编辑、删除、options* |
 | 供应商 | `/api/supplier` | 5 | list、options、新增、编辑、删除 |
-| 库存 | `/api/stock` | 7 | inbound/list、inbound、outbound/list、outbound、warn/list、log/list、statistics |
+| 库存 | `/api/stock` | 8 | inbound/list、inbound、outbound/list、outbound、warn/list、log/list、statistics、slow-moving |
+| 库存盘点 | `/api/stocktake` | 7 | list、detail、生成、保存实盘、提交、审核、取消 |
 | 销售 | `/api/sale` | 7 | record/list、record/:id、record、record/return、record/void、item/list、statistics |
-| 仪表盘 | `/api/dashboard` | 5 | overview、sale-trend、stock-top、category-stock、hot-products |
+| 仪表盘 | `/api/dashboard` | 6 | overview、sale-trend、stock-top、category-stock、hot-products、supplier-ranking |
+| 操作日志 | `/api/operation-log` | 1 | list（仅管理员） |
 
 自测用的 curl 示例见 [`API-TEST.md`](API-TEST.md)。
 
@@ -225,8 +233,9 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 - `index.js` 是本项目原有的 todo 练手 demo，已被 `app.js` 取代，确认后可删除。
 - `db/seed.sql` 中不含用户数据：密码需 bcrypt 加密，无法用纯 SQL 预置，由 `db/init.js` 运行期写入。
 - 内存版 token 黑名单在服务重启后失效；账号状态与 `token_version` 存在数据库中，重启不影响这部分失效逻辑。生产环境建议把黑名单替换为 Redis。
-- 已有数据库升级到 `token_version` 版本需执行 `db/migrations/001_add_token_version.sql`（增量 `ALTER TABLE`，不会清空数据）。
-- 操作日志按需求文档属「建议项」，当前通过控制台访问日志体现，未单独建表。
+- 已有数据库升级需按顺序执行 `db/migrations/` 下的增量脚本：
+  `001_add_token_version.sql`、`002_weighted_avg_cost.sql`、`003_stock_biz_type.sql`、`004_stocktake.sql`、`005_operation_log.sql`（均为增量，不会清空数据）。
+- 操作日志已单独建表 `operation_log`：入库、销售、退货、作废、盘点提交/审核等关键动作在业务事务内写入，仅管理员可查。
 
 ---
 

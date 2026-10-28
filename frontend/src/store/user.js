@@ -38,6 +38,8 @@ export const useUserStore = defineStore('user', () => {
   const role = ref(saved.role || '')
   const position = ref(saved.position || '')
   const permissions = ref(Array.isArray(saved.permissions) ? saved.permissions : [])
+  /** 本次页面加载是否已从后端刷新过用户信息（避免沿用旧权限缓存） */
+  const hydrated = ref(false)
   const username = ref(saved.username || '')
   const realName = ref(saved.realName || '')
   const avatar = ref(saved.avatar || '')
@@ -85,6 +87,7 @@ export const useUserStore = defineStore('user', () => {
     if (data.realName !== undefined) realName.value = data.realName
     if (data.avatar !== undefined) avatar.value = data.avatar || ''
     if (data.phone !== undefined) phone.value = data.phone || ''
+    hydrated.value = true
     persistProfile()
   }
 
@@ -123,6 +126,7 @@ export const useUserStore = defineStore('user', () => {
     role.value = ''
     position.value = ''
     permissions.value = []
+    hydrated.value = false
     username.value = ''
     realName.value = ''
     avatar.value = ''
@@ -136,6 +140,7 @@ export const useUserStore = defineStore('user', () => {
     role,
     position,
     permissions,
+    hydrated,
     username,
     realName,
     avatar,

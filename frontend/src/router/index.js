@@ -195,9 +195,9 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 刷新页面后 token 仍在，但内存中的用户资料已丢失：
-  // 旧版本的本地缓存可能没有 permissions，也要重新拉一次
-  if (!userStore.role || userStore.permissions.length === 0) {
+  // 每次整页加载都用 token 刷新一次用户信息：
+  // 避免沿用本地缓存的旧 permissions（例如新增了盘点权限但菜单不出现）
+  if (!userStore.hydrated) {
     try {
       await userStore.fetchUserInfo()
     } catch {
