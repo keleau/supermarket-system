@@ -20,3 +20,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# E2E 失败截图
+test-results/

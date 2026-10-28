@@ -21,6 +21,9 @@ import { execSync } from 'node:child_process'
 /** 开发服务器固定端口（与 vite.config.js 的 server.port 保持一致） */
 const DEV_PORT = 5173
 
+/** E2E 自动化模式：不清理 5173、不注入 SSE、不自动停服 */
+const isE2E = process.env.E2E === '1'
+
 /** 本项目页面保活长连接地址（SSE） */
 const GUARD_URL = '/__dev-guard'
 
@@ -87,12 +90,13 @@ export function devServerGuard() {
     apply: 'serve',
 
     config() {
-      // 启动前清理旧实例，保证固定端口、单实例
-      cleanStalePort(DEV_PORT)
+      // 启动前清理旧实例，保证固定端口、单实例；E2E 不碰开发端口
+      if (!isE2E) cleanStalePort(DEV_PORT)
     },
 
     // 往本项目页面注入保活长连接脚本
     transformIndexHtml() {
+      if (isE2E) return []
       return [
         {
           tag: 'script',
@@ -104,6 +108,8 @@ export function devServerGuard() {
     },
 
     configureServer(server) {
+      if (isE2E) return
+
       /** 当前在线的本项目页面连接数（引用计数：多标签全部关闭才允许停服） */
       let clientCount = 0
       /** 关停倒计时句柄；宽限期内有新页面连入则取消 */

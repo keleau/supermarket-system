@@ -4,6 +4,9 @@ import { defineConfig } from 'vite'
 // 开发服务器守护：启动前清理残留实例 + 关闭网页后自动停服
 import { devServerGuard } from './scripts/devGuardPlugin.js'
 
+// E2E 可以用独立端口 + 独立后端，不碰本地 5173/3000
+const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:3000'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), devServerGuard()],
@@ -20,7 +23,16 @@ export default defineConfig({
     proxy: {
       // 所有 /api 开头的请求代理到 Node 后端（后端端口按实际情况修改）
       '/api': {
-        target: 'http://localhost:3000',
+        target: apiTarget,
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': {
+        target: apiTarget,
         changeOrigin: true,
       },
     },
