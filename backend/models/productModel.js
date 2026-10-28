@@ -119,21 +119,31 @@ async function create(conn, data) {
   return { id: result.insertId };
 }
 
-/** 更新 */
+/**
+ * 更新商品档案
+ * 成本价与库存都不在此更新：
+ * - 成本只能由入库按移动加权平均自动计算
+ * - 库存只能由入库 / 出库 / 销售 / 盘点等单据驱动
+ */
 async function update(conn, id, data) {
   await run(
     conn,
     `UPDATE product SET
        product_code = ?, product_name = ?, category_id = ?, spec = ?, unit = ?,
-       cost_price = ?, sale_price = ?, stock_num = ?, warn_num = ?,
+       sale_price = ?, warn_num = ?,
        supplier_id = ?, image_url = ?, status = ?
      WHERE id = ?`,
     [
       data.productCode, data.productName, data.categoryId, data.spec, data.unit,
-      data.costPrice, data.salePrice, data.stockNum, data.warnNum,
+      data.salePrice, data.warnNum,
       data.supplierId, data.imageUrl, data.status, id,
     ]
   );
+}
+
+/** 入库后回写移动加权平均成本（事务内使用） */
+async function updateCostPrice(conn, id, costPrice) {
+  await run(conn, 'UPDATE product SET cost_price = ? WHERE id = ?', [costPrice, id]);
 }
 
 /**
@@ -174,13 +184,14 @@ async function remove(id) {
   await query('DELETE FROM product WHERE id = ?', [id]);
 }
 
-/** 是否已有业务记录（流水或销售明细） */
+/** 是否已有业务记录（流水、销售明细或盘点明细） */
 async function hasBusinessRecords(id) {
   const rows = await query(
     `SELECT
        (SELECT COUNT(*) FROM stock_log WHERE product_id = ?) +
-       (SELECT COUNT(*) FROM sale_item WHERE product_id = ?) AS cnt`,
-    [id, id]
+       (SELECT COUNT(*) FROM sale_item WHERE product_id = ?) +
+       (SELECT COUNT(*) FROM stocktake_item WHERE product_id = ?) AS cnt`,
+    [id, id, id]
   );
   return rows[0].cnt > 0;
 }
@@ -223,6 +234,7 @@ module.exports = {
   generateProductCode,
   create,
   update,
+  updateCostPrice,
   changeStock,
   updateStatus,
   remove,

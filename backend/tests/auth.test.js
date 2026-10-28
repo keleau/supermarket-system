@@ -6,6 +6,7 @@ const { authenticate, signToken, revokeToken } = require('../middleware/auth');
 const userModel = require('../models/userModel');
 const { pool } = require('../db/pool');
 const { BizError } = require('../utils/result');
+const { permissionsFor } = require('../utils/permissions');
 const config = require('../config');
 
 const DB_USER = {
@@ -67,6 +68,7 @@ test('token 有效且版本一致：放行，权限以数据库当前值为准',
     role: 'operator',
     position: '收银员',
     realName: '小王',
+    permissions: permissionsFor(DB_USER),
   });
   assert.equal(req.token, token);
 });

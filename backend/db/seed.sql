@@ -46,17 +46,17 @@ INSERT INTO `product`
 -- ==================== 出入库流水（预置历史）====================
 -- 每个商品「最后一条流水的 after_num」与 product.stock_num 保持一致，账实相符
 INSERT INTO `stock_log`
-(`product_id`, `change_type`, `quantity`, `before_num`, `after_num`, `supplier_name`, `inbound_price`, `operator`, `remark`, `create_time`) VALUES
-( 1, 1, 120,  260,  380, '农夫山泉股份有限公司',  1.20, 'admin', '常规补货',   DATE_SUB(NOW(), INTERVAL 6 DAY)),
-( 2, 1, 300,    0,  300, '伊利实业集团',          2.50, 'admin', '新批次入库', DATE_SUB(NOW(), INTERVAL 6 DAY)),
-( 2, 2,  40,  300,  260, '',                     NULL, 'admin', '门店调拨',   DATE_SUB(NOW(), INTERVAL 4 DAY)),
-(16, 1, 200,    0,  200, '康师傅控股有限公司',    6.50, 'admin', '补货',       DATE_SUB(NOW(), INTERVAL 5 DAY)),
-(16, 2, 194,  200,    6, '',                     NULL, 'admin', '促销出货',   DATE_SUB(NOW(), INTERVAL 3 DAY)),
-(12, 2,  20,   28,    8, '',                     NULL, 'admin', '报损出库',   DATE_SUB(NOW(), INTERVAL 3 DAY)),
-( 9, 2,  40,  136,   96, '',                     NULL, 'admin', '报损',       DATE_SUB(NOW(), INTERVAL 2 DAY)),
-( 4, 1,2000,  740, 2740, '康师傅控股有限公司',    3.20, 'admin', '大批量补货', DATE_SUB(NOW(), INTERVAL 2 DAY)),
-( 8, 2,  60,   60,    0, '',                     NULL, 'admin', '清仓出库',   DATE_SUB(NOW(), INTERVAL 1 DAY)),
-( 3, 2,  10,   22,   12, '',                     NULL, 'admin', '报损出库',   DATE_SUB(NOW(), INTERVAL 1 DAY));
+(`product_id`, `change_type`, `biz_type`, `quantity`, `before_num`, `after_num`, `supplier_name`, `inbound_price`, `operator`, `remark`, `create_time`) VALUES
+( 1, 1, 1, 120,  260,  380, '农夫山泉股份有限公司',  1.20, 'admin', '常规补货',   DATE_SUB(NOW(), INTERVAL 6 DAY)),
+( 2, 1, 6, 300,    0,  300, '伊利实业集团',          2.50, 'admin', '新批次入库', DATE_SUB(NOW(), INTERVAL 6 DAY)),
+( 2, 2, 7,  40,  300,  260, '',                     NULL, 'admin', '门店调拨',   DATE_SUB(NOW(), INTERVAL 4 DAY)),
+(16, 1, 6, 200,    0,  200, '康师傅控股有限公司',    6.50, 'admin', '补货',       DATE_SUB(NOW(), INTERVAL 5 DAY)),
+(16, 2, 7, 194,  200,    6, '',                     NULL, 'admin', '促销出货',   DATE_SUB(NOW(), INTERVAL 3 DAY)),
+(12, 2, 7,  20,   28,    8, '',                     NULL, 'admin', '报损出库',   DATE_SUB(NOW(), INTERVAL 3 DAY)),
+( 9, 2, 7,  40,  136,   96, '',                     NULL, 'admin', '报损',       DATE_SUB(NOW(), INTERVAL 2 DAY)),
+( 4, 1, 1,2000,  740, 2740, '康师傅控股有限公司',    3.20, 'admin', '大批量补货', DATE_SUB(NOW(), INTERVAL 2 DAY)),
+( 8, 2, 7,  60,   60,    0, '',                     NULL, 'admin', '清仓出库',   DATE_SUB(NOW(), INTERVAL 1 DAY)),
+( 3, 2, 7,  10,   22,   12, '',                     NULL, 'admin', '报损出库',   DATE_SUB(NOW(), INTERVAL 1 DAY));
 
 -- ==================== 销售记录 + 明细（预置历史）====================
 -- 1001：1 天前，正常

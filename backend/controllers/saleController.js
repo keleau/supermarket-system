@@ -8,9 +8,13 @@ const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, round2, round4, paging, assert, assertDateRange, startOfDay, endOfDay,
 } = require('../utils/validate');
 const { normalizeSaleItems } = require('../utils/saleItems');
+const { maskSaleItems } = require('../utils/finance');
+const { hasPermission } = require('../utils/permissions');
+const { STOCK_BIZ } = require('../utils/stockBiz');
+const { writeLog } = require('../utils/operationLog');
 const {
   formatDate, formatCompact, addDays, dayStart, dayEnd, eachDate,
 } = require('../utils/date');
@@ -32,12 +36,17 @@ async function recordList(req, res) {
   const endDate = toStr(req.query.endTime);
   assertDateRange(startDate, endDate);
 
+  // 收银员只能看自己的单据；管理员 / 会计可按收银员筛选
+  const operator = hasPermission(req.user, 'sale:read:all')
+    ? (toStr(req.query.operator) || null)
+    : operatorName(req);
+
   const result = await saleModel.recordList({
     pageNum,
     pageSize,
     offset,
     saleNo: toStr(req.query.saleNo) || null,
-    operator: toStr(req.query.operator) || null,
+    operator,
     payType,
     startTime: startOfDay(startDate),
     endTime: endOfDay(endDate),
@@ -56,6 +65,11 @@ async function recordDetail(req, res) {
   const record = await saleModel.findRecordById(id);
   assert(record, '销售单据不存在');
 
+  if (!hasPermission(req.user, 'sale:read:all') && record.operator !== operatorName(req)) {
+    throw new BizError('无权限查看该单据', 403);
+  }
+
+  record.items = maskSaleItems(record.items, req.user);
   return ok(res, record);
 }
 
@@ -102,7 +116,7 @@ async function submit(req, res) {
             categoryId: product.category_id,
             quantity: it.quantity,
             salePrice,
-            costPrice: round2(product.cost_price),
+            costPrice: round4(product.cost_price),
             amount,
             stockNum: product.stock_num,
           });
@@ -151,6 +165,7 @@ async function submit(req, res) {
           await stockModel.insertLog(conn, {
             productId: p.productId,
             changeType: 2,
+            bizType: STOCK_BIZ.SALE_OUT,
             quantity: p.quantity,
             beforeNum: p.stockNum,
             afterNum: p.stockNum - p.quantity,
@@ -158,6 +173,14 @@ async function submit(req, res) {
             remark: `销售出库 ${saleNo}`,
           });
         }
+
+        await writeLog(conn, req, {
+          module: 'sale',
+          action: 'create',
+          bizNo: saleNo,
+          afterStatus: 1,
+          detail: `销售开单，${totalQuantity} 件，金额 ${totalAmount}`,
+        });
 
         return { id: record.id, saleNo, totalQuantity, totalAmount };
       });
@@ -209,15 +232,24 @@ async function returnSale(req, res) {
       await stockModel.insertLog(conn, {
         productId: it.productId,
         changeType: 1,
+        bizType: STOCK_BIZ.SALE_RETURN,
         quantity: it.quantity,
         beforeNum,
         afterNum,
         operator,
-        remark: `销售退货 ${record.saleNo}`,
+        remark: `销售退货 ${record.sale_no}`,
       });
     }
 
     await saleModel.updateStatus(conn, record.id, 2);
+    await writeLog(conn, req, {
+      module: 'sale',
+      action: 'return',
+      bizNo: record.sale_no,
+      beforeStatus: 1,
+      afterStatus: 2,
+      detail: `销售退货，单号 ${record.sale_no}`,
+    });
   });
 
   return ok(res, null);
@@ -240,6 +272,14 @@ async function voidSale(req, res) {
 
     // 作废不恢复库存（用于误录冲正），也不生成流水
     await saleModel.updateStatus(conn, record.id, 3);
+    await writeLog(conn, req, {
+      module: 'sale',
+      action: 'void',
+      bizNo: record.sale_no,
+      beforeStatus: 1,
+      afterStatus: 3,
+      detail: `销售作废，单号 ${record.sale_no}`,
+    });
   });
 
   return ok(res, null);
@@ -253,7 +293,8 @@ async function itemList(req, res) {
   assert(productId !== null, '缺少商品 id');
 
   const { pageNum, pageSize, offset } = paging(req.query);
-  const result = await saleModel.itemListByProduct({ productId, pageNum, pageSize, offset });
+  const operator = hasPermission(req.user, 'sale:read:all') ? null : operatorName(req);
+  const result = await saleModel.itemListByProduct({ productId, operator, pageNum, pageSize, offset });
 
   return ok(res, page(result.list, result.total, pageNum, pageSize));
 }

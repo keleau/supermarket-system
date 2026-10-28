@@ -2,6 +2,7 @@
  * 出入库流水 / 库存统计 Model
  */
 const { pool, query } = require('../db/pool');
+const { formatDateTime } = require('../utils/date');
 
 /** 事务连接执行入口 */
 async function run(conn, sql, params = []) {
@@ -14,6 +15,17 @@ const LOG_FIELDS = `
   l.product_id    AS productId,
   p.product_name  AS productName,
   l.change_type   AS changeType,
+  l.biz_type      AS bizType,
+  CASE l.biz_type
+    WHEN 1 THEN '采购入库'
+    WHEN 2 THEN '销售出库'
+    WHEN 3 THEN '销售退货'
+    WHEN 4 THEN '盘点盘盈'
+    WHEN 5 THEN '盘点盘亏'
+    WHEN 6 THEN '期初入库'
+    WHEN 7 THEN '手工调整'
+    ELSE '其他'
+  END             AS bizTypeName,
   l.quantity,
   l.before_num    AS beforeNum,
   l.after_num     AS afterNum,
@@ -32,7 +44,7 @@ const LOG_JOINS = 'FROM stock_log l LEFT JOIN product p ON p.id = l.product_id';
  */
 async function logList({
   pageNum, pageSize, offset,
-  productName, productId, changeType, startTime, endTime,
+  productName, productId, changeType, bizType, startTime, endTime,
 }) {
   const where = [];
   const params = [];
@@ -48,6 +60,10 @@ async function logList({
   if (changeType !== null && changeType !== undefined) {
     where.push('l.change_type = ?');
     params.push(changeType);
+  }
+  if (bizType !== null && bizType !== undefined) {
+    where.push('l.biz_type = ?');
+    params.push(bizType);
   }
   if (startTime) {
     where.push('l.create_time >= ?');
@@ -77,15 +93,33 @@ async function insertLog(conn, data) {
   const result = await run(
     conn,
     `INSERT INTO stock_log
-      (product_id, change_type, quantity, before_num, after_num,
+      (product_id, change_type, biz_type, quantity, before_num, after_num,
        supplier_name, inbound_price, operator, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      data.productId, data.changeType, data.quantity, data.beforeNum, data.afterNum,
-      data.supplierName || '', data.inboundPrice ?? null, data.operator || '', data.remark || '',
+      data.productId,
+      data.changeType,
+      data.bizType ?? 7,
+      data.quantity,
+      data.beforeNum,
+      data.afterNum,
+      data.supplierName || '',
+      data.inboundPrice ?? null,
+      data.operator || '',
+      data.remark || '',
     ]
   );
   return { id: result.insertId };
+}
+
+/** 该商品是否已有入库流水（用于判断首次入库 = 期初入库） */
+async function hasInbound(conn, productId) {
+  const rows = await run(
+    conn,
+    'SELECT 1 FROM stock_log WHERE product_id = ? AND change_type = 1 LIMIT 1',
+    [productId]
+  );
+  return rows.length > 0;
 }
 
 /**
@@ -154,17 +188,47 @@ async function statistics() {
   };
 }
 
+/**
+ * 积压商品：当前有库存，且近 days 天没有正常销售（从未销售也算积压）
+ */
+async function slowMoving(days = 30, limit = 10) {
+  const cutoff = formatDateTime(new Date(Date.now() - days * 24 * 3600 * 1000));
+
+  return query(
+    `SELECT t.productId, t.productName, t.stockNum, t.unit, t.lastSaleTime,
+            DATEDIFF(NOW(), t.lastSaleTime) AS daysSinceLastSale
+     FROM (
+       SELECT p.id AS productId,
+              p.product_name AS productName,
+              p.stock_num AS stockNum,
+              p.unit,
+              (SELECT MAX(sr.create_time)
+               FROM sale_item si
+               JOIN sale_record sr ON sr.id = si.sale_record_id
+               WHERE si.product_id = p.id AND sr.status = 1) AS lastSaleTime
+       FROM product p
+       WHERE p.stock_num > 0
+     ) t
+     WHERE t.lastSaleTime IS NULL OR t.lastSaleTime < ?
+     ORDER BY t.stockNum DESC, t.productId ASC
+     LIMIT ?`,
+    [cutoff, limit]
+  );
+}
+
 /** 某时间区间内的入库总数量（仪表盘用） */
 async function inboundQuantityBetween(startTime, endTime) {
   const rows = await query(
     `SELECT COALESCE(SUM(quantity), 0) AS total
      FROM stock_log
-     WHERE change_type = 1 AND create_time >= ? AND create_time <= ?`,
+     WHERE change_type = 1 AND biz_type IN (1, 6)
+       AND create_time >= ? AND create_time <= ?`,
     [startTime, endTime]
   );
   return Number(rows[0].total) || 0;
 }
 
 module.exports = {
-  run, logList, insertLog, buildWarnWhere, warnList, statistics, inboundQuantityBetween,
+  run, logList, insertLog, hasInbound, buildWarnWhere, warnList, statistics,
+  slowMoving, inboundQuantityBetween,
 };

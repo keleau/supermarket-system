@@ -3,6 +3,8 @@
  * 销售口径与销售统计一致：仅统计 status=1 的正常单据。
  */
 const { query } = require('../db/pool');
+const { formatDateTime } = require('../utils/date');
+const { round2 } = require('../utils/validate');
 
 /** 库存余量 TOP N（按当前库存降序） */
 async function stockTop(limit = 5) {
@@ -75,10 +77,38 @@ async function inboundQuantity(startTime, endTime) {
   const rows = await query(
     `SELECT COALESCE(SUM(quantity), 0) AS total
      FROM stock_log
-     WHERE change_type = 1 AND create_time >= ? AND create_time <= ?`,
+     WHERE change_type = 1 AND biz_type IN (1, 6)
+       AND create_time >= ? AND create_time <= ?`,
     [startTime, endTime]
   );
   return Number(rows[0].total) || 0;
+}
+
+/**
+ * 供应商进货金额排行（近 N 天，只统计 biz_type=1 的采购入库）
+ * 期初入库、销售退货、手工调整都不算供应商进货。
+ */
+async function supplierRanking(days = 30, limit = 10) {
+  const cutoff = formatDateTime(new Date(Date.now() - days * 24 * 3600 * 1000));
+
+  const rows = await query(
+    `SELECT supplier_name AS supplierName,
+            COALESCE(SUM(quantity), 0) AS quantity,
+            COALESCE(SUM(COALESCE(inbound_price, 0) * quantity), 0) AS amount
+     FROM stock_log
+     WHERE change_type = 1 AND biz_type = 1 AND supplier_name <> ''
+       AND create_time >= ?
+     GROUP BY supplier_name
+     ORDER BY amount DESC
+     LIMIT ?`,
+    [cutoff, limit]
+  );
+
+  return rows.map((r) => ({
+    supplierName: r.supplierName,
+    quantity: Number(r.quantity) || 0,
+    amount: round2(r.amount),
+  }));
 }
 
 /** 商品种类数（SKU） */
@@ -111,6 +141,7 @@ module.exports = {
   hourlyAmounts,
   dailyAmounts,
   inboundQuantity,
+  supplierRanking,
   productKindCount,
   warnCounts,
 };

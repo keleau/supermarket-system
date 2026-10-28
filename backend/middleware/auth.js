@@ -14,6 +14,7 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const { BizError } = require('../utils/result');
+const { permissionsFor, hasAnyPermission } = require('../utils/permissions');
 const userModel = require('../models/userModel');
 
 /** token 黑名单：token -> 过期时间戳(ms) */
@@ -73,6 +74,7 @@ async function authenticate(req, res, next) {
     role: user.role,
     position: user.position,
     realName: user.realName || user.username,
+    permissions: permissionsFor(user),
   };
   req.token = token;
   next();
@@ -83,6 +85,17 @@ function requireAdmin(req, res, next) {
   if (!req.user) return next(new BizError('登录已失效，请重新登录', 401));
   if (req.user.role !== 'admin') return next(new BizError('无权限执行该操作', 403));
   next();
+}
+
+/** 岗位权限鉴权：满足任意一个权限码即可放行 */
+function requirePermission(...permissions) {
+  return (req, res, next) => {
+    if (!req.user) return next(new BizError('登录已失效，请重新登录', 401));
+    if (!hasAnyPermission(req.user, permissions)) {
+      return next(new BizError('无权限执行该操作', 403));
+    }
+    next();
+  };
 }
 
 /** 签发 token（版本号写入载荷，改密码/改权限后旧 token 自动失效） */
@@ -101,4 +114,4 @@ function signToken(user) {
   );
 }
 
-module.exports = { authenticate, requireAdmin, signToken, revokeToken };
+module.exports = { authenticate, requireAdmin, requirePermission, signToken, revokeToken };

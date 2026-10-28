@@ -29,11 +29,15 @@ onMounted(() => {
 })
 onBeforeUnmount(() => MQ_COLLAPSE.removeEventListener('change', syncCollapseByViewport))
 
-/** 判断当前角色是否有权限访问路由 */
+/** 判断当前角色 / 岗位权限是否可以访问路由 */
 function canAccess(record) {
   const roles = record?.meta?.roles
-  if (!roles || roles.length === 0) return true
-  return roles.includes(userStore.role)
+  if (roles && roles.length > 0 && !roles.includes(userStore.role)) return false
+
+  const permissions = record?.meta?.permissions
+  if (permissions && permissions.length > 0 && !userStore.canAny(permissions)) return false
+
+  return true
 }
 
 /** 路由是否需要在菜单中隐藏 */

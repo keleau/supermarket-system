@@ -53,3 +53,8 @@ export function getStockLogList(params) {
 export function getStockStatistics() {
   return get('/stock/statistics')
 }
+
+/** 积压商品：当前有库存、近 N 天没有正常销售 */
+export function getSlowMoving(params) {
+  return get('/stock/slow-moving', params)
+}

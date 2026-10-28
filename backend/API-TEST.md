@@ -167,29 +167,35 @@ curl "http://localhost:3000/api/product/list?pageNum=1&pageSize=10&productName=�
 curl http://localhost:3000/api/product/1 -H "Authorization: Bearer $TOKEN"
 
 # 新增（条码留空 → 后端自动生成 690 + 10 位序号）
+# 注意：库存不能通过商品接口设置，新建商品库存固定为 0、status=0
 curl -X POST http://localhost:3000/api/product \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"productName":"雀巢咖啡 268ml","categoryId":1,"spec":"268ml","unit":"罐","costPrice":4.0,"salePrice":6.5,"stockNum":100,"warnNum":20,"supplierId":1,"status":1}'
+  -d '{"productName":"雀巢咖啡 268ml","categoryId":1,"spec":"268ml","unit":"罐","costPrice":4.0,"salePrice":6.5,"warnNum":20,"supplierId":1}'
 
 # 销售价为 0 → {"code":400,"msg":"销售单价必须大于 0"}
 curl -X POST http://localhost:3000/api/product \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"productName":"测试商品","categoryId":1,"salePrice":0,"stockNum":10}'
 
-# 进货价为负 → {"code":400,"msg":"进货价不能为负"}
+# 期初成本为负 → {"code":400,"msg":"成本价不能为负"}
 curl -X POST http://localhost:3000/api/product \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"productName":"测试商品","categoryId":1,"salePrice":5,"costPrice":-1,"stockNum":10}'
 
-# 新增库存为 0 → 自动置 status=0（缺货自动下架）
-curl -X POST http://localhost:3000/api/product \
+# 期初入库（新建商品后再入库；入库后库存 > 0 自动上架）
+curl -X POST http://localhost:3000/api/stock/inbound \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"productName":"待上架商品","categoryId":1,"salePrice":5,"stockNum":0,"warnNum":10}'
+  -d '{"productId":17,"quantity":100,"inboundPrice":4.0,"remark":"期初入库"}'
 
-# 编辑
+# 编辑（不传 costPrice，或传当前成本原值）
 curl -X PUT http://localhost:3000/api/product \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"id":17,"productCode":"6900000000017","productName":"雀巢咖啡 268ml","categoryId":1,"spec":"268ml","unit":"罐","costPrice":4.0,"salePrice":7.0,"stockNum":100,"warnNum":20,"supplierId":1,"status":1}'
+  -d '{"id":17,"productCode":"6900000000017","productName":"雀巢咖啡 268ml","categoryId":1,"spec":"268ml","unit":"罐","salePrice":7.0,"warnNum":20,"supplierId":1,"status":1}'
+
+# 编辑时修改成本 → {"code":400,"msg":"成本价由入库自动计算，不能手工修改"}
+curl -X PUT http://localhost:3000/api/product \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"id":17,"productCode":"6900000000017","productName":"雀巢咖啡 268ml","categoryId":1,"spec":"268ml","unit":"罐","costPrice":5.0,"salePrice":7.0,"warnNum":20,"supplierId":1,"status":1}'
 
 # 删除有业务记录的商品 → {"code":400,"msg":"该商品存在业务记录，无法删除"}
 curl -X DELETE http://localhost:3000/api/product/1 -H "Authorization: Bearer $TOKEN"
@@ -242,6 +248,10 @@ curl "http://localhost:3000/api/stock/outbound/list?pageNum=1&pageSize=10" \
   -H "Authorization: Bearer $TOKEN"
 
 # 出入库流水（可按商品 / 类型 / 时间筛选）
+# 只看销售退货流水（bizType=3）
+curl "http://localhost:3000/api/stock/log/list?pageNum=1&pageSize=10&bizType=3" \
+  -H "Authorization: Bearer $TOKEN"
+
 curl "http://localhost:3000/api/stock/log/list?pageNum=1&pageSize=10&productId=1&changeType=1" \
   -H "Authorization: Bearer $TOKEN"
 ```

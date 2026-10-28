@@ -11,6 +11,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/store/user'
 import { Download, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { getSupplierOptions } from '@/api/modules/supplier'
@@ -19,11 +20,45 @@ import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
 import { formatInt, money } from '@/utils/format.js'
 
 const route = useRoute()
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 
 /** 当前模式：inbound 入库 / outbound 出库 */
 const changeType = computed(() => (route.name === 'StockOutbound' ? 2 : 1))
 const isInbound = computed(() => changeType.value === 1)
 const pageTitle = computed(() => (isInbound.value ? '入库明细' : '出库明细'))
+/** 入库需要 stock:in，出库需要 stock:out；只读岗位看不到新增按钮 */
+const canCreate = computed(() => (isInbound.value ? userStore.can('stock:in') : userStore.can('stock:out')))
+
+/** 业务类型标签（与后端 bizType 契约一致） */
+const BIZ_TYPES = {
+  1: { label: '采购入库', tag: 'success' },
+  2: { label: '销售出库', tag: 'warning' },
+  3: { label: '销售退货', tag: 'info' },
+  4: { label: '盘点盘盈', tag: 'success' },
+  5: { label: '盘点盘亏', tag: 'danger' },
+  6: { label: '期初入库', tag: 'success' },
+  7: { label: '手工调整', tag: 'info' },
+}
+
+function bizMeta(bizType) {
+  return BIZ_TYPES[bizType] || { label: '其他', tag: 'info' }
+}
+
+/** 入库/出库页只展示各自可能出现的业务类型 */
+const BIZ_OPTIONS = computed(() => {
+  const all = [
+    { value: 1, label: '采购入库' },
+    { value: 6, label: '期初入库' },
+    { value: 3, label: '销售退货' },
+    { value: 4, label: '盘点盘盈' },
+    { value: 2, label: '销售出库' },
+    { value: 5, label: '盘点盘亏' },
+    { value: 7, label: '手工调整' },
+  ]
+  const allowed = isInbound.value ? [1, 6, 3, 4, 7] : [2, 5, 7]
+  return all.filter((opt) => allowed.includes(opt.value))
+})
 
 /* ---------------- 选品与供应商下拉 ---------------- */
 
@@ -55,11 +90,13 @@ const pagination = reactive({ pageNum: 1, pageSize: 10 })
 
 const filterForm = reactive({
   productName: '',
+  bizType: '',
   dateRange: [],
 })
 
 const appliedFilters = reactive({
   productName: '',
+  bizType: '',
   startTime: '',
   endTime: '',
 })
@@ -72,6 +109,7 @@ async function loadList() {
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
       productName: appliedFilters.productName || undefined,
+      bizType: appliedFilters.bizType === '' ? undefined : appliedFilters.bizType,
       startTime: appliedFilters.startTime || undefined,
       endTime: appliedFilters.endTime || undefined,
     })
@@ -84,6 +122,7 @@ async function loadList() {
 
 function handleQuery() {
   appliedFilters.productName = filterForm.productName.trim()
+  appliedFilters.bizType = filterForm.bizType
   appliedFilters.startTime = filterForm.dateRange?.[0] || ''
   appliedFilters.endTime = filterForm.dateRange?.[1] || ''
   pagination.pageNum = 1
@@ -92,6 +131,7 @@ function handleQuery() {
 
 function handleReset() {
   filterForm.productName = ''
+  filterForm.bizType = ''
   filterForm.dateRange = []
   handleQuery()
 }
@@ -107,9 +147,14 @@ function handleSizeChange(pageSize) {
   loadList()
 }
 
-onMounted(() => {
-  loadOptions()
+onMounted(async () => {
+  await loadOptions()
   loadList()
+  // 商品新增后的「期初入库」引导：/stock/inbound?productId=xxx
+  const productId = Number(route.query.productId)
+  if (isInbound.value && userStore.can('stock:in') && Number.isInteger(productId) && productId > 0) {
+    openCreate(productId)
+  }
 })
 
 /* ---------------- 新增入库 / 出库弹窗 ---------------- */
@@ -153,8 +198,9 @@ const rules = computed(() => ({
   ],
 }))
 
-function openCreate() {
+function openCreate(productId = null) {
   Object.assign(form, defaultForm())
+  if (productId) form.productId = Number(productId)
   barcode.value = ''
   dialogVisible.value = true
   // 弹窗打开后把光标放到扫码框，扫码枪即可直接输入
@@ -240,6 +286,11 @@ async function handleSubmit() {
             @keyup.enter="handleQuery"
           />
         </el-form-item>
+        <el-form-item label="业务类型">
+          <el-select v-model="filterForm.bizType" placeholder="全部" clearable style="width: 130px">
+            <el-option v-for="opt in BIZ_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="`${isInbound ? '入库' : '出库'}日期`">
           <el-date-picker
             v-model="filterForm.dateRange"
@@ -257,7 +308,7 @@ async function handleSubmit() {
         </el-form-item>
       </el-form>
       <div class="filter-extra">
-        <el-button type="primary" :icon="Plus" @click="openCreate">
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate()">
           {{ isInbound ? '新增入库' : '新增出库' }}
         </el-button>
       </div>
@@ -272,6 +323,13 @@ async function handleSubmit() {
 
       <el-table v-loading="loading" :data="list" class="inbound-table">
         <el-table-column prop="productName" label="商品名称" min-width="180" show-overflow-tooltip />
+        <el-table-column label="业务类型" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="bizMeta(row.bizType).tag" effect="light" round size="small">
+              {{ row.bizTypeName || bizMeta(row.bizType).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="quantity" :label="`${isInbound ? '入库' : '出库'}数量`" align="right" width="110">
           <template #default="{ row }">
             <span class="num">{{ formatInt(row.quantity) }}</span>
@@ -282,7 +340,7 @@ async function handleSubmit() {
             <span>{{ row.supplierName || '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="isInbound" prop="inboundPrice" label="入库单价" align="right" width="110">
+        <el-table-column v-if="isInbound && isAdmin" prop="inboundPrice" label="入库单价" align="right" width="110">
           <template #default="{ row }">
             <span class="num">{{ row.inboundPrice ? `¥${money(row.inboundPrice)}` : '—' }}</span>
           </template>
@@ -370,6 +428,7 @@ async function handleSubmit() {
         </el-form-item>
         <el-form-item v-if="isInbound" label="入库单价(元)">
           <el-input-number v-model="form.inboundPrice" :min="0" :precision="2" :step="0.1" controls-position="right" style="width: 100%" />
+          <span class="form-hint">填写后按移动加权平均更新商品成本，留空则维持原均价</span>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" placeholder="选填" maxlength="100" show-word-limit />

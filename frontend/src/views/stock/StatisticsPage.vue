@@ -12,14 +12,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Box, Warning, Goods, Money, DocumentChecked } from '@element-plus/icons-vue'
+import { useUserStore } from '@/store/user'
 import ChartCard from '@/views/dashboard/components/ChartCard.vue'
 import { axisTextStyle, baseTooltip, cssVar, useEchart } from '@/composables/useEchart.js'
-import { getStockStatistics, getWarnList } from '@/api/modules/stock'
+import { getStockStatistics, getWarnList, getSlowMoving } from '@/api/modules/stock'
 import { getProductList } from '@/api/modules/product'
-import { getCategoryStock, getStockTop } from '@/api/modules/dashboard'
+import { getCategoryStock, getStockTop, getSupplierRanking } from '@/api/modules/dashboard'
 import { formatInt, money } from '@/utils/format.js'
 
 const route = useRoute()
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 
 /* ---------------- 数据加载 ---------------- */
 
@@ -30,23 +33,32 @@ const stockTop = ref([])
 const categoryStock = ref([])
 /** 商品总种类（SKU 数） */
 const productKindCount = ref(0)
+/** 积压商品与供应商进货排行 */
+const slowProducts = ref([])
+const supplierRanking = ref([])
 
 async function loadData() {
   loading.value = true
   try {
-    const [statistics, warns, top, categories, products] = await Promise.all([
+    const requests = [
       getStockStatistics(),
       getWarnList(),
       getStockTop(),
       getCategoryStock(),
       // 只取总数：pageSize 给 1，用返回的 total 作为商品种类数
       getProductList({ pageNum: 1, pageSize: 1 }),
-    ])
+      getSlowMoving({ days: 30, limit: 10 }),
+    ]
+    if (isAdmin.value) requests.push(getSupplierRanking({ days: 30, limit: 10 }))
+
+    const [statistics, warns, top, categories, products, slow, suppliers] = await Promise.all(requests)
     stats.value = statistics || {}
     warnProducts.value = Array.isArray(warns) ? warns : []
     stockTop.value = Array.isArray(top) ? top : []
     categoryStock.value = Array.isArray(categories) ? categories : []
     productKindCount.value = products?.total || 0
+    slowProducts.value = Array.isArray(slow) ? slow : []
+    supplierRanking.value = Array.isArray(suppliers) ? suppliers : []
   } finally {
     loading.value = false
   }
@@ -56,13 +68,17 @@ onMounted(loadData)
 
 /* ---------------- 顶部统计指标 ---------------- */
 
-const statCards = computed(() => [
-  { key: 'totalStock', label: '库存总量', value: stats.value.totalStock || 0, unit: '件', icon: Box, tone: 'brand' },
-  { key: 'kind', label: '商品总种类', value: productKindCount.value, unit: '种', icon: Goods, tone: 'info' },
-  { key: 'warn', label: '库存预警商品', value: stats.value.warnProductCount || 0, unit: '种', icon: Warning, tone: 'warning' },
-  { key: 'pending', label: '待盘点商品', value: stats.value.pendingProductCount || 0, unit: '种', icon: DocumentChecked, tone: 'danger' },
-  { key: 'value', label: '库存总价值', value: stats.value.totalStockValue || 0, unit: '元', icon: Money, tone: 'success', isMoney: true },
-])
+const statCards = computed(() => {
+  const cards = [
+    { key: 'totalStock', label: '库存总量', value: stats.value.totalStock || 0, unit: '件', icon: Box, tone: 'brand' },
+    { key: 'kind', label: '商品总种类', value: productKindCount.value, unit: '种', icon: Goods, tone: 'info' },
+    { key: 'warn', label: '库存预警商品', value: stats.value.warnProductCount || 0, unit: '种', icon: Warning, tone: 'warning' },
+    { key: 'pending', label: '待盘点商品', value: stats.value.pendingProductCount || 0, unit: '种', icon: DocumentChecked, tone: 'danger' },
+    { key: 'value', label: '库存总价值', value: stats.value.totalStockValue || 0, unit: '元', icon: Money, tone: 'success', isMoney: true },
+  ]
+  // 库存总价值由成本计算，非管理员不展示
+  return isAdmin.value ? cards : cards.filter((card) => card.key !== 'value')
+})
 
 /* ---------------- 预警商品表 ---------------- */
 
@@ -282,6 +298,56 @@ onMounted(() => {
           @size-change="pagination.pageNum = 1"
         />
       </div>
+    </section>
+
+    <!-- ============ 积压商品 ============ -->
+    <section class="page-card table-card">
+      <header class="table-head">
+        <h3 class="table-title">积压商品</h3>
+        <span class="table-sub">当前有库存、近 30 天没有正常销售</span>
+      </header>
+      <el-table :data="slowProducts">
+        <el-table-column prop="productName" label="商品" min-width="180" show-overflow-tooltip />
+        <el-table-column label="当前库存" width="120" align="right">
+          <template #default="{ row }">
+            <span class="num">{{ formatInt(row.stockNum) }}{{ row.unit || '' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近销售" min-width="160">
+          <template #default="{ row }">{{ row.lastSaleTime || '从未销售' }}</template>
+        </el-table-column>
+        <el-table-column label="未销售天数" width="120" align="right">
+          <template #default="{ row }">
+            <span class="num">{{ row.daysSinceLastSale ?? '—' }}</span>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <div class="table-empty"><p>暂无积压商品</p></div>
+        </template>
+      </el-table>
+    </section>
+
+    <!-- ============ 供应商进货排行（仅管理员） ============ -->
+    <section v-if="isAdmin" class="page-card table-card">
+      <header class="table-head">
+        <h3 class="table-title">供应商进货排行</h3>
+        <span class="table-sub">近 30 天，仅统计采购入库（不含期初/退货/手工调整）</span>
+      </header>
+      <el-table :data="supplierRanking">
+        <el-table-column label="排名" width="70" align="center">
+          <template #default="{ $index }">{{ $index + 1 }}</template>
+        </el-table-column>
+        <el-table-column prop="supplierName" label="供应商" min-width="220" show-overflow-tooltip />
+        <el-table-column label="进货数量" width="120" align="right">
+          <template #default="{ row }"><span class="num">{{ formatInt(row.quantity) }}</span></template>
+        </el-table-column>
+        <el-table-column label="进货金额" width="140" align="right">
+          <template #default="{ row }"><span class="num">¥{{ money(row.amount) }}</span></template>
+        </el-table-column>
+        <template #empty>
+          <div class="table-empty"><p>暂无供应商进货数据</p></div>
+        </template>
+      </el-table>
     </section>
   </div>
 </template>

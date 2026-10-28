@@ -34,6 +34,11 @@ function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+/** 加权成本保留四位小数，减少多次入库后的精度损失 */
+function round4(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 10000) / 10000;
+}
+
 /** 手机号：1 开头 11 位数字 */
 function isPhone(v) {
   return /^1[3-9]\d{9}$/.test(String(v));
@@ -100,7 +105,7 @@ function endOfDay(v) {
 }
 
 module.exports = {
-  isBlank, toInt, toNum, toStr, round2,
+  isBlank, toInt, toNum, toStr, round2, round4,
   isPhone, isIdCard, isUsername, isDate, assertDateRange,
   paging, assert, startOfDay, endOfDay,
 };

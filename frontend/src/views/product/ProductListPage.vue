@@ -7,7 +7,7 @@
  * 业务：库存预警 = stockNum < warnNum；缺货 = stockNum <= 0；库存为 0 时后端自动下架
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Plus, Search, Refresh, Download, Edit, Delete, View } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
@@ -28,6 +28,7 @@ import { formatInt, money } from '@/utils/format.js'
 
 const userStore = useUserStore()
 const route = useRoute()
+const router = useRouter()
 const isAdmin = computed(() => userStore.isAdmin)
 
 /* ---------------- 下拉字典（分类 / 供应商） ---------------- */
@@ -154,7 +155,6 @@ const defaultForm = () => ({
   unit: '个',
   costPrice: 0,
   salePrice: null,
-  stockNum: 0,
   warnNum: 10,
   status: 1,
   supplierId: null,
@@ -170,10 +170,7 @@ const rules = {
     { validator: (_rule, v, cb) => (Number(v) > 0 ? cb() : cb(new Error('单价必须大于 0'))), trigger: 'blur' },
   ],
   costPrice: [
-    { validator: (_rule, v, cb) => (Number(v) >= 0 ? cb() : cb(new Error('进货价不能为负'))), trigger: 'blur' },
-  ],
-  stockNum: [
-    { validator: (_rule, v, cb) => (Number(v) >= 0 ? cb() : cb(new Error('库存不能为负'))), trigger: 'blur' },
+    { validator: (_rule, v, cb) => (Number(v) >= 0 ? cb() : cb(new Error('期初成本不能为负'))), trigger: 'blur' },
   ],
   warnNum: [
     { validator: (_rule, v, cb) => (Number(v) >= 0 ? cb() : cb(new Error('预警值不能为负'))), trigger: 'blur' },
@@ -204,7 +201,6 @@ function openEdit(row) {
     unit: row.unit || '个',
     costPrice: Number(row.costPrice) || 0,
     salePrice: Number(row.salePrice) || 0,
-    stockNum: row.stockNum,
     warnNum: row.warnNum,
     status: row.status,
     supplierId: row.supplierId ?? null,
@@ -227,22 +223,37 @@ async function handleSubmit() {
       categoryId: form.categoryId,
       spec: form.spec?.trim() || '',
       unit: form.unit?.trim() || '个',
-      costPrice: Number(form.costPrice) || 0,
       salePrice: Number(form.salePrice) || 0,
-      stockNum: Number(form.stockNum) || 0,
       warnNum: Number(form.warnNum) || 0,
       supplierId: form.supplierId ?? null,
-      status: Number(form.status),
     }
+    let createdId = null
     if (isEdit.value) {
+      // 成本只能由入库自动计算；库存只能由单据驱动，编辑都不提交
+      payload.status = Number(form.status)
       await updateProduct({ id: form.id, ...payload })
       ElMessage.success('商品信息已更新')
     } else {
-      await addProduct(payload)
-      ElMessage.success('商品已新增')
+      // 新增只填期初成本，库存固定为 0，提交后引导到期初入库
+      payload.costPrice = Number(form.costPrice) || 0
+      const created = await addProduct(payload)
+      createdId = created?.id || null
+      ElMessage.success('商品已新增，库存为 0')
     }
     dialogVisible.value = false
     await loadList()
+    if (createdId) {
+      try {
+        await ElMessageBox.confirm(
+          '商品已创建，当前库存为 0。是否现在进行期初入库？',
+          '期初入库',
+          { confirmButtonText: '去期初入库', cancelButtonText: '稍后', type: 'info' },
+        )
+        router.push({ path: '/stock/inbound', query: { productId: createdId } })
+      } catch {
+        // 用户选择稍后，可随时从库存管理进入入库
+      }
+    }
   } catch {
     // 失败文案（条码重复 / 分类不存在等）由 request 拦截器统一弹出
   } finally {
@@ -279,7 +290,7 @@ function handleExport() {
   const today = new Date().toISOString().slice(0, 10)
   downloadCsv(
     `商品档案_${today}.csv`,
-    ['商品名称', '条码', '分类', '规格', '单位', '进货价(元)', '售价(元)', '库存', '预警阈值', '状态', '供应商', '创建时间'],
+    ['商品名称', '条码', '分类', '规格', '单位', '加权成本(元)', '售价(元)', '库存', '预警阈值', '状态', '供应商', '创建时间'],
     list.value.map((p) => [
       p.productName,
       p.productCode,
@@ -420,7 +431,7 @@ function nameInitial(name) {
         </el-table-column>
         <el-table-column prop="categoryName" label="分类" width="110" />
         <el-table-column prop="spec" label="规格" width="110" show-overflow-tooltip />
-        <el-table-column prop="costPrice" label="进货价" align="right" width="110">
+        <el-table-column v-if="isAdmin" prop="costPrice" label="加权成本" align="right" width="110">
           <template #default="{ row }">
             <span class="num">¥{{ money(row.costPrice) }}</span>
           </template>
@@ -499,6 +510,14 @@ function nameInitial(name) {
       class="product-dialog"
       :close-on-click-modal="false"
     >
+      <el-alert
+        v-if="!isEdit"
+        type="info"
+        :closable="false"
+        show-icon
+        title="新商品库存为 0，创建后请到「库存管理 → 入库」进行期初入库，入库后自动上架。"
+        style="margin-bottom: 16px"
+      />
       <el-form
         ref="formRef"
         :model="form"
@@ -537,23 +556,21 @@ function nameInitial(name) {
           </el-form-item>
         </div>
         <div class="form-row">
-          <el-form-item label="进货价(元)" prop="costPrice">
+          <el-form-item v-if="!isEdit" label="期初成本(元)" prop="costPrice">
             <el-input-number v-model="form.costPrice" :min="0" :precision="2" :step="0.1" controls-position="right" style="width: 100%" />
+          </el-form-item>
+          <el-form-item v-else label="加权成本(元)">
+            <el-input :model-value="money(form.costPrice)" disabled />
           </el-form-item>
           <el-form-item label="售价(元)" prop="salePrice">
             <el-input-number v-model="form.salePrice" :min="0.01" :precision="2" :step="0.1" controls-position="right" style="width: 100%" />
           </el-form-item>
         </div>
         <div class="form-row">
-          <el-form-item label="库存数量" prop="stockNum">
-            <el-input-number v-model="form.stockNum" :min="0" :step="1" controls-position="right" style="width: 100%" />
-          </el-form-item>
           <el-form-item label="预警阈值" prop="warnNum">
             <el-input-number v-model="form.warnNum" :min="0" :step="1" controls-position="right" style="width: 100%" />
           </el-form-item>
-        </div>
-        <div class="form-row">
-          <el-form-item label="销售状态" prop="status" class="span-2">
+          <el-form-item v-if="isEdit" label="销售状态" prop="status">
             <el-radio-group v-model="form.status">
               <el-radio :value="1">在售</el-radio>
               <el-radio :value="0">下架</el-radio>
@@ -584,7 +601,7 @@ function nameInitial(name) {
             <el-descriptions-item label="商品分类">{{ detailProduct.categoryName }}</el-descriptions-item>
             <el-descriptions-item label="规格">{{ detailProduct.spec }}</el-descriptions-item>
             <el-descriptions-item label="单位">{{ detailProduct.unit }}</el-descriptions-item>
-            <el-descriptions-item label="进货价">
+            <el-descriptions-item v-if="isAdmin" label="加权成本">
               <span class="num">¥{{ money(detailProduct.costPrice) }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="售价">

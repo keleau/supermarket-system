@@ -36,3 +36,8 @@ export function getCategoryStock() {
 export function getHotProducts() {
   return get('/dashboard/hot-products')
 }
+
+/** 供应商进货金额排行（仅管理员），入参 { days?, limit? } */
+export function getSupplierRanking(params) {
+  return get('/dashboard/supplier-ranking', params)
+}

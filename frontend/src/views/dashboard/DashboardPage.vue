@@ -8,6 +8,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { graphic } from 'echarts/core'
+import { useUserStore } from '@/store/user'
 import ChartCard from './components/ChartCard.vue'
 import MetricHero from './components/MetricHero.vue'
 import {
@@ -27,6 +28,8 @@ import {
 } from '@/api/modules/dashboard'
 
 const router = useRouter()
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 /** 支持字符串路径或 { path, query } 对象形式的跳转 */
 function go(target) {
   router.push(target)
@@ -104,7 +107,7 @@ const miniMetrics = computed(() => [
     icon: 'Van',
     tone: 'success',
     rate: overview.value.inboundCompareRate ?? null,
-    to: '/stock/inbound',
+    to: userStore.can('stock:read') ? '/stock/inbound' : null,
   },
   {
     key: 'kind',
@@ -123,7 +126,9 @@ const miniMetrics = computed(() => [
     icon: 'Warning',
     tone: 'warning',
     // 跳库存统计并自动筛选预警商品（库存统计页读取 query.filter）
-    to: { path: '/stock/statistics', query: { filter: 'warn' } },
+    to: userStore.can('stock:read')
+      ? { path: '/stock/statistics', query: { filter: 'warn' } }
+      : null,
   },
   {
     key: 'pending',
@@ -133,7 +138,9 @@ const miniMetrics = computed(() => [
     icon: 'DocumentChecked',
     tone: 'info',
     // 跳库存统计并自动筛选待盘点商品
-    to: { path: '/stock/statistics', query: { filter: 'pending' } },
+    to: userStore.can('stock:read')
+      ? { path: '/stock/statistics', query: { filter: 'pending' } }
+      : null,
   },
 ])
 
@@ -364,15 +371,23 @@ const { chartEl: hotBarEl } = useEchart(hotBarOption)
   <div v-loading="loading" class="dashboard">
     <!-- ============ 顶部：左核心大面板 + 右 4 小指标 ============ -->
     <section class="metric-row">
-      <MetricHero class="dash-rise" style="--i: 0" :today="todayMetric" :month="monthMetric" />
+      <MetricHero
+        class="dash-rise"
+        style="--i: 0"
+        :today="todayMetric"
+        :month="monthMetric"
+        :show-profit="isAdmin"
+        :can-view-sales="userStore.can('sale:read')"
+      />
 
       <div class="mini-grid">
         <section
           v-for="(item, index) in miniMetrics"
           :key="item.key"
           class="mini-card page-card dash-rise tactile"
+          :class="{ 'is-static': !item.to }"
           :style="{ '--i': index + 1 }"
-          @click="go(item.to)"
+          @click="item.to && go(item.to)"
         >
           <div class="mini-top">
             <span class="mini-icon" :class="`tone-${item.tone}`">
@@ -398,11 +413,11 @@ const { chartEl: hotBarEl } = useEchart(hotBarOption)
       <ChartCard
         title="近 7 日销售金额"
         subtitle="单位：元"
-        clickable
+        :clickable="userStore.can('sale:read')"
         class="area-card dash-rise"
         style="--i: 5"
         :empty="saleTrend.length === 0"
-        @click="go('/sale/record')"
+        @click="userStore.can('sale:read') && go('/sale/record')"
       >
         <div ref="saleAreaEl" class="chart-canvas"></div>
       </ChartCard>
@@ -412,11 +427,11 @@ const { chartEl: hotBarEl } = useEchart(hotBarOption)
         title="库存余量 TOP5"
         subtitle="按当前库存数量排序"
         :summary="`当前库存总量：${formatInt(stockTopSum)} 件`"
-        clickable
+        :clickable="userStore.can('stock:read')"
         class="stock-card dash-rise"
         style="--i: 6"
         :empty="stockTop.length === 0"
-        @click="go('/stock/statistics')"
+        @click="userStore.can('stock:read') && go('/stock/statistics')"
       >
         <div ref="stockBarEl" class="chart-canvas"></div>
       </ChartCard>
@@ -520,6 +535,13 @@ const { chartEl: hotBarEl } = useEchart(hotBarOption)
   border-color: var(--brand-primary-light-7);
   box-shadow: var(--shadow-sm);
   transform: translateY(-2px);
+}
+
+/* 无权限跳转的指标卡：保留数据展示，但不表现成可点击 */
+.mini-card.is-static,
+.mini-card.is-static:hover {
+  cursor: default;
+  transform: none;
 }
 
 .mini-top {

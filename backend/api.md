@@ -73,16 +73,25 @@ Authorization: Bearer <token>
 - `position = '管理员'` → `role = 'admin'`
 - 其余职位（仓管/收银员/后勤/采购/会计）→ `role = 'operator'`
 
-**权限边界：**
+**岗位权限矩阵：**
 
-| role | 权限范围 |
-|------|----------|
-| admin    | 全部功能（含用户管理、商品/供应商增删改、销售退货/作废） |
-| operator | 商品/供应商/分类**只读**；可入库、出库、销售结账；**无用户管理权限** |
+| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 商品/分类/供应商 | 用户管理 |
+|------|----------|------------|----------|------|------|----------|------------------|----------|
+| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 读写 | 是 |
+| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 只读 | 否 |
+| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 只读 | 否 |
+| 采购   | 否 | 否 | 否 | 是 | 否 | 是 | 只读 | 否 |
+| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 只读 | 否 |
+| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 否 |
 
-> ⚠️ 前端菜单/路由权限判断依赖**中文职位**：`position === '管理员'` 视为管理员。后端鉴权则用 `role === 'admin'`。两者通过上述映射规则保持一致。
->
-> 登录接口需同时返回 `role`（英文）与 `position`（中文），前端将 `position` 存入 `roleName` 字段用于菜单过滤。
+> 管理员（`role = admin` 或 `position = 管理员`）拥有全部权限（`*`）。
+> 登录 / 获取用户信息接口返回 `permissions` 权限码数组，前端用它控制菜单、路由和按钮；后端接口按同一矩阵再校验一次。
+> 收银员的「销售单查看」只限本人；会计/管理员可看全部。
+
+**财务字段脱敏：**
+
+- 非管理员响应会剔除商品 `costPrice`、销售明细 `costPrice`、仪表盘利润字段、库存统计 `totalStockValue`、出入库流水 `inboundPrice`。
+- `/api/sale/statistics` 仅管理员可访问，其他角色返回 `code=403`。
 
 ### 2.5 字段命名
 
@@ -112,6 +121,7 @@ Authorization: Bearer <token>
 | 商品状态 status | 1 / 0 | 在售 / 下架 |
 | 用户状态 status | 1 / 0 | 启用 / 禁用 |
 | 流水类型 changeType | 1 / 2 | 入库 / 出库 |
+| 流水业务类型 bizType | 1 / 2 / 3 / 4 / 5 / 6 / 7 | 采购入库 / 销售出库 / 销售退货 / 盘点盘盈 / 盘点盘亏 / 期初入库 / 手工调整 |
 | 支付方式 payType | 1 / 2 / 3 / 4 | 现金 / 微信 / 支付宝 / 会员卡 |
 | 销售状态 status | 1 / 2 / 3 | 正常 / 已退货 / 已作废 |
 | 预警状态 warnStatus | 1 / 2 | 低于预警值 / 已缺货 |
@@ -191,7 +201,7 @@ CREATE TABLE `product` (
   `category_id`  BIGINT UNSIGNED NOT NULL COMMENT '分类 id',
   `spec`         VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '规格',
   `unit`         VARCHAR(6)    NOT NULL DEFAULT '个' COMMENT '单位',
-  `cost_price`   DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '进货价',
+  `cost_price`   DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '加权平均成本（4 位小数，入库自动更新）',
   `sale_price`   DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '销售价',
   `stock_num`    INT           NOT NULL DEFAULT 0 COMMENT '当前库存',
   `warn_num`     INT           NOT NULL DEFAULT 0 COMMENT '预警阈值',
@@ -211,6 +221,7 @@ CREATE TABLE `stock_log` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `product_id`    BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
   `change_type`   TINYINT      NOT NULL COMMENT '1 入库 / 2 出库',
+  `biz_type`      TINYINT      NOT NULL DEFAULT 1 COMMENT '业务类型：1采购入库/2销售出库/3销售退货/4盘点盘盈/5盘点盘亏/6期初入库/7手工调整',
   `quantity`      INT          NOT NULL COMMENT '变动数量（正数）',
   `before_num`    INT          NOT NULL COMMENT '变动前库存',
   `after_num`     INT          NOT NULL COMMENT '变动后库存',
@@ -249,7 +260,7 @@ CREATE TABLE `sale_item` (
   `category_name`  VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '分类名称（冗余快照）',
   `quantity`       INT           NOT NULL COMMENT '销售数量',
   `sale_price`     DECIMAL(10,2) NOT NULL COMMENT '销售单价',
-  `cost_price`     DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '进货成本价（毛利用）',
+  `cost_price`     DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '成本快照（销售时加权平均成本）',
   `amount`         DECIMAL(12,2) NOT NULL COMMENT '小计金额',
   PRIMARY KEY (`id`),
   KEY `idx_sale_record` (`sale_record_id`),
@@ -309,7 +320,8 @@ CREATE TABLE `sale_item` (
     "position": "管理员",
     "username": "admin",
     "avatar": "https://...png",
-    "realName": "系统管理员"
+    "realName": "系统管理员",
+    "permissions": ["*"]
   }
 }
 ```
@@ -318,6 +330,7 @@ CREATE TABLE `sale_item` (
 |-----------|------|
 | token    | 访问令牌（建议 JWT，含 userId、role） |
 | role     | 英文角色，后端鉴权用 |
+| permissions | 岗位权限码数组，`*` 表示全部权限 |
 | position | 中文职位，前端存入 roleName 用于菜单/路由权限判断 |
 | username | 登录账号 |
 | avatar   | 头像 URL（可选） |
@@ -755,6 +768,8 @@ CREATE TABLE `sale_item` (
 | Method | GET |
 | 访问权限 | admin/operator |
 
+> 非管理员返回时自动剔除 `costPrice`。
+
 **请求参数（query）：**
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -813,6 +828,8 @@ CREATE TABLE `sale_item` (
 | Method | GET |
 | 访问权限 | admin/operator |
 
+> 非管理员返回时自动剔除 `costPrice`。
+
 **返回示例：** 与列表项结构一致（单对象，含 categoryName、supplierName）。
 
 **业务校验规则：** 商品不存在 → `{ code: 400, msg: "商品不存在" }`。
@@ -839,11 +856,9 @@ CREATE TABLE `sale_item` (
   "unit": "瓶",
   "costPrice": 1.2,
   "salePrice": 2,
-  "stockNum": 100,
   "warnNum": 10,
   "supplierId": 1,
-  "imageUrl": "",
-  "status": 1
+  "imageUrl": ""
 }
 ```
 
@@ -854,11 +869,12 @@ CREATE TABLE `sale_item` (
 1. 商品名称为空 → `{ code: 400, msg: "请输入商品名称" }`。
 2. 条码为空时后端自动生成（`690` 前缀 + 10 位序号）；条码已存在 → `{ code: 400, msg: "商品条码已存在" }`。
 3. 销售价 ≤ 0 → `{ code: 400, msg: "销售单价必须大于 0" }`。
-4. 进货价 < 0 → `{ code: 400, msg: "进货价不能为负" }`。
-5. 库存数 < 0 → `{ code: 400, msg: "库存不能为负" }`。
-6. 库存数为 0 时自动置 status=0（缺货自动下架）。
+4. 期初成本 < 0 → `{ code: 400, msg: "成本价不能为负" }`。
+5. 库存不能通过商品接口设置：`stockNum` 传了也会忽略，新建商品库存固定为 0、`status=0`。
+6. 期初库存请调用 `POST /api/stock/inbound`（期初入库）；入库后库存 > 0 会自动上架。
 
-> 库存联动：销售/出库把库存扣到 0 时同样会自动下架；入库/销售退货使库存恢复后，原缺货下架的商品会自动上架。
+> 成本口径：新增时可填期初成本；之后由入库按移动加权平均自动更新，商品编辑不能手工修改。
+> 库存口径：商品新增/编辑都不改库存；库存只能由入库、出库、销售、退货、盘点等单据驱动。
 
 ---
 
@@ -871,7 +887,7 @@ CREATE TABLE `sale_item` (
 | Method | PUT |
 | 访问权限 | admin |
 
-**请求参数（body）：** 同新增，另含 `id`。
+**请求参数（body）：** 同新增，另含 `id`。`costPrice` 不能修改：不传或传原值可通过，传不同的值返回 400（成本只能由入库自动计算）。`stockNum` 不参与更新，库存只能由单据驱动。
 
 **返回示例：** `{ "code": 200, "msg": "success", "data": null }`
 
@@ -879,7 +895,8 @@ CREATE TABLE `sale_item` (
 
 1. 商品不存在 → `{ code: 400, msg: "商品不存在" }`。
 2. 条码已存在（排除自身）→ `{ code: 400, msg: "商品条码已存在" }`。
-3. 其余校验同新增商品。
+3. 成本价与当前值不同 → `{ code: 400, msg: "成本价由入库自动计算，不能手工修改" }`。
+4. 其余校验同新增商品。
 
 ---
 
@@ -1056,7 +1073,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 入库明细分页列表 |
 | URL | `/api/stock/inbound/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购 / 后勤 / 会计（需 stock:read） |
 
 **请求参数（query）：**
 
@@ -1107,7 +1124,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 提交入库 |
 | URL | `/api/stock/inbound` |
 | Method | POST |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购（需 stock:in） |
 
 **请求参数（body）：**
 
@@ -1126,7 +1143,7 @@ CREATE TABLE `sale_item` (
 | productId    | number | 是 | 商品 id |
 | supplierId   | number | 否 | 供应商 id |
 | quantity     | number | 是 | 入库数量，必须 > 0 |
-| inboundPrice | number | 否 | 入库单价 |
+| inboundPrice | number | 否 | 入库单价；填写后按移动加权平均更新商品成本，留空则维持原均价 |
 | remark       | string | 否 | 备注 |
 
 **返回示例：** `{ "code": 200, "msg": "success", "data": { "id": 2002 } }`
@@ -1147,7 +1164,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 出库明细分页列表 |
 | URL | `/api/stock/outbound/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购 / 后勤 / 会计（需 stock:read） |
 
 **请求参数（query）：** 同入库列表（4.5.1）。
 
@@ -1188,7 +1205,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 提交出库 |
 | URL | `/api/stock/outbound` |
 | Method | POST |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管（需 stock:out） |
 
 **请求参数（body）：**
 
@@ -1224,7 +1241,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 预警商品列表 |
 | URL | `/api/stock/warn/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购 / 后勤 / 会计（需 stock:read） |
 
 **请求参数（query）：**
 
@@ -1277,7 +1294,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 出入库流水分页列表 |
 | URL | `/api/stock/log/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购 / 后勤 / 会计（需 stock:read） |
 
 **请求参数（query）：**
 
@@ -1288,6 +1305,7 @@ CREATE TABLE `sale_item` (
 | productName | string | 否 | 商品名称（模糊） |
 | productId   | number | 否 | 商品 id（精确，商品详情抽屉用） |
 | changeType  | number | 否 | 1 入库 / 2 出库 |
+| bizType     | number | 否 | 业务类型 1-7，见 2.7 通用枚举 |
 | startTime   | string | 否 | 开始时间 |
 | endTime     | string | 否 | 结束时间 |
 
@@ -1304,6 +1322,8 @@ CREATE TABLE `sale_item` (
         "productId": 3,
         "productName": "可口可乐 330ml",
         "changeType": 2,
+        "bizType": 7,
+        "bizTypeName": "手工调整",
         "quantity": 10,
         "beforeNum": 86,
         "afterNum": 76,
@@ -1330,7 +1350,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 库存统计 |
 | URL | `/api/stock/statistics` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 仓管 / 采购 / 后勤 / 会计（需 stock:read） |
 
 **请求参数：** 无。
 
@@ -1373,7 +1393,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 销售记录分页列表 |
 | URL | `/api/sale/record/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 收银员 / 会计（收银员仅本人单据） |
 
 **请求参数（query）：**
 
@@ -1425,7 +1445,9 @@ CREATE TABLE `sale_item` (
 | 名称 | 销售记录详情 |
 | URL | `/api/sale/record/:id` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 收银员（仅本人）/ 会计 |
+
+> 非管理员返回时，明细 items 中的 `costPrice` 会被剔除。
 
 **返回示例：**
 
@@ -1469,7 +1491,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 提交销售 |
 | URL | `/api/sale/record` |
 | Method | POST |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 收银员（需 sale:create） |
 
 **请求参数（body）：**
 
@@ -1584,7 +1606,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 销售明细按商品查询 |
 | URL | `/api/sale/item/list` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin / 收银员（仅本人）/ 会计 |
 
 **用途：** 商品详情抽屉的「销售历史」展示。
 
@@ -1632,7 +1654,7 @@ CREATE TABLE `sale_item` (
 | 名称 | 销售统计聚合 |
 | URL | `/api/sale/statistics` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | admin（含成本/毛利，operator 返回 403） |
 
 **请求参数（query）：**
 
@@ -1712,7 +1734,9 @@ CREATE TABLE `sale_item` (
 | 名称 | 运营总览指标 |
 | URL | `/api/dashboard/overview` |
 | Method | GET |
-| 访问权限 | admin/operator |
+| 访问权限 | 所有已登录岗位（需 dashboard:read） |
+
+> 非管理员不返回利润字段：`todayProfitAmount` / `todayProfitRate` / `todayProfitTrend` / `monthProfitAmount` / `monthProfitRate` / `monthTrend`。
 
 **请求参数：** 无。
 
@@ -1750,7 +1774,7 @@ CREATE TABLE `sale_item` (
 | todayProfitAmount / todayProfitRate / todayProfitTrend | 今日利润 / 环比(%) / 迷你趋势线序列 |
 | monthSaleAmount / monthSaleRate / monthSaleTrend | 本月销售额 / 环比(%) / 迷你趋势线序列 |
 | monthProfitAmount / monthProfitRate / monthTrend | 本月利润 / 环比(%) / 迷你趋势线序列 |
-| monthInboundQuantity / inboundCompareRate | 本月收货总数量 / 环比(%) |
+| monthInboundQuantity / inboundCompareRate | 本月收货总数量（仅采购入库/期初入库，不含销售退货）/ 环比(%) |
 | productKindCount | 商品总种类（SKU 数） |
 | warnProductCount | 库存预警商品数量 |
 | pendingStockCount | 待盘点商品数量 |

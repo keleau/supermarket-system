@@ -1,9 +1,11 @@
 /**
  * 用户登录态管理（Pinia）
  *
- * 后端权限模型（两者由同一份数据推导，用途严格区分）：
- * - role     'admin' | 'operator' —— 只用于权限判断（路由守卫、按钮显隐）
- * - position 中文职位（管理员/仓管/收银员/后勤/采购/会计）—— 只用于界面展示
+ * 后端权限模型：
+ * - role         'admin' | 'operator' —— 管理员兜底判断
+ * - position     中文职位（管理员/仓管/收银员/后勤/采购/会计）
+ * - permissions  后端按职位下发的权限码数组（'*' 表示全部），
+ *                路由守卫、菜单和按钮统一用它判断
  *
  * 登录态持久化到 localStorage，刷新页面不丢失。
  */
@@ -35,6 +37,7 @@ export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem(TOKEN_KEY) || '')
   const role = ref(saved.role || '')
   const position = ref(saved.position || '')
+  const permissions = ref(Array.isArray(saved.permissions) ? saved.permissions : [])
   const username = ref(saved.username || '')
   const realName = ref(saved.realName || '')
   const avatar = ref(saved.avatar || '')
@@ -42,6 +45,17 @@ export const useUserStore = defineStore('user', () => {
 
   /** 是否为管理员（决定管理员专属菜单与按钮的显隐） */
   const isAdmin = computed(() => role.value === ROLE_ADMIN)
+
+  /** 是否拥有某个权限码（'*' 视为全部权限） */
+  function can(permission) {
+    return permissions.value.includes('*') || permissions.value.includes(permission)
+  }
+
+  /** 是否拥有任意一个权限码 */
+  function canAny(list = []) {
+    if (!list || list.length === 0) return true
+    return permissions.value.includes('*') || list.some((p) => permissions.value.includes(p))
+  }
 
   /** 顶部展示名：优先姓名，其次账号 */
   const displayName = computed(() => realName.value || username.value || '未命名用户')
@@ -53,6 +67,7 @@ export const useUserStore = defineStore('user', () => {
       JSON.stringify({
         role: role.value,
         position: position.value,
+        permissions: permissions.value,
         username: username.value,
         realName: realName.value,
         avatar: avatar.value,
@@ -65,6 +80,7 @@ export const useUserStore = defineStore('user', () => {
   function applyUser(data) {
     if (data.role !== undefined) role.value = data.role
     if (data.position !== undefined) position.value = data.position
+    if (Array.isArray(data.permissions)) permissions.value = data.permissions
     if (data.username !== undefined) username.value = data.username
     if (data.realName !== undefined) realName.value = data.realName
     if (data.avatar !== undefined) avatar.value = data.avatar || ''
@@ -106,6 +122,7 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''
     role.value = ''
     position.value = ''
+    permissions.value = []
     username.value = ''
     realName.value = ''
     avatar.value = ''
@@ -118,11 +135,14 @@ export const useUserStore = defineStore('user', () => {
     token,
     role,
     position,
+    permissions,
     username,
     realName,
     avatar,
     phone,
     isAdmin,
+    can,
+    canAny,
     displayName,
     login,
     fetchUserInfo,

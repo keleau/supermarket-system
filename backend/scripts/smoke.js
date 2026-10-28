@@ -71,20 +71,100 @@ async function main() {
     method: 'POST',
     body: { username: 'admin', password: '123456' },
   });
-  check(login.payload.code === 200 && login.payload.data?.token, '管理员登录', login.payload);
+  check(
+    login.payload.code === 200 &&
+      login.payload.data?.token &&
+      Array.isArray(login.payload.data.permissions) &&
+      login.payload.data.permissions.includes('*'),
+    '管理员登录并返回全部权限',
+    login.payload
+  );
   const token = login.payload.data.token;
 
   const overview = await request('/api/dashboard/overview', { token });
   check(
-    overview.payload.code === 200 && typeof overview.payload.data.todaySaleAmount === 'number',
-    '仪表盘查询',
+    overview.payload.code === 200 &&
+      typeof overview.payload.data.todaySaleAmount === 'number' &&
+      typeof overview.payload.data.todayProfitAmount === 'number',
+    '管理员仪表盘可见销售与利润',
     overview.payload
   );
 
   const productBefore = await request('/api/product/1', { token });
-  check(productBefore.payload.code === 200, '商品详情查询', productBefore.payload);
-  const stockBefore = Number(productBefore.payload.data.stockNum);
-  check(stockBefore >= 2, '预置商品库存足够冒烟测试', stockBefore);
+  check(
+    productBefore.payload.code === 200 && typeof productBefore.payload.data.costPrice === 'number',
+    '管理员可见商品成本',
+    productBefore.payload
+  );
+  const stockBeforeInbound = Number(productBefore.payload.data.stockNum);
+  const costBeforeInbound = Number(productBefore.payload.data.costPrice);
+  check(stockBeforeInbound >= 2, '预置商品库存足够冒烟测试', stockBeforeInbound);
+
+  // 入库 → 加权平均成本 → 销售快照成本
+  const inboundQty = 10;
+  const inboundPrice = 2;
+  const rawCost = (stockBeforeInbound * costBeforeInbound + inboundQty * inboundPrice) /
+    (stockBeforeInbound + inboundQty);
+  const expectedCost = Math.round((rawCost + Number.EPSILON) * 10000) / 10000;
+
+  const inbound = await request('/api/stock/inbound', {
+    method: 'POST',
+    token,
+    body: { productId: 1, quantity: inboundQty, inboundPrice, supplierId: 1, remark: '冒烟测试补货' },
+  });
+  check(inbound.payload.code === 200, '入库成功', inbound.payload);
+
+  const productAfterInbound = await request('/api/product/1', { token });
+  check(
+    Number(productAfterInbound.payload.data.stockNum) === stockBeforeInbound + inboundQty,
+    '入库后库存正确增加',
+    { before: stockBeforeInbound, after: productAfterInbound.payload.data.stockNum }
+  );
+  check(
+    Number(productAfterInbound.payload.data.costPrice) === expectedCost,
+    '入库后成本按移动加权平均更新',
+    { expected: expectedCost, actual: productAfterInbound.payload.data.costPrice }
+  );
+
+  const inboundLogs = await request('/api/stock/log/list?productId=1&pageNum=1&pageSize=20', {
+    token,
+  });
+  const purchaseInLog = inboundLogs.payload.data?.list?.find(
+    (row) => row.remark === '冒烟测试补货'
+  );
+  check(
+    purchaseInLog?.bizType === 1 && purchaseInLog?.bizTypeName === '采购入库',
+    '入库流水标记为采购入库',
+    inboundLogs.payload
+  );
+
+  const stockBeforeSale = stockBeforeInbound + inboundQty;
+  const productSnapshot = productAfterInbound.payload.data;
+
+  const badCostUpdate = await request('/api/product', {
+    method: 'PUT',
+    token,
+    body: { ...productSnapshot, costPrice: Number(productSnapshot.costPrice) + 1 },
+  });
+  check(
+    badCostUpdate.payload.code === 400 && /不能手工修改/.test(badCostUpdate.payload.msg || ''),
+    '商品编辑禁止手改成本',
+    badCostUpdate.payload
+  );
+
+  const goodUpdate = await request('/api/product', {
+    method: 'PUT',
+    token,
+    body: productSnapshot,
+  });
+  check(goodUpdate.payload.code === 200, '商品编辑不修改成本可以正常保存', goodUpdate.payload);
+
+  const productAfterUpdate = await request('/api/product/1', { token });
+  check(
+    Number(productAfterUpdate.payload.data.costPrice) === expectedCost,
+    '正常编辑不会改动加权成本',
+    { expected: expectedCost, actual: productAfterUpdate.payload.data.costPrice }
+  );
 
   const sale = await request('/api/sale/record', {
     method: 'POST',
@@ -97,9 +177,9 @@ async function main() {
 
   const productAfterSale = await request('/api/product/1', { token });
   check(
-    Number(productAfterSale.payload.data.stockNum) === stockBefore - 2,
+    Number(productAfterSale.payload.data.stockNum) === stockBeforeSale - 2,
     '结账后库存正确扣减',
-    { before: stockBefore, after: productAfterSale.payload.data.stockNum }
+    { before: stockBeforeSale, after: productAfterSale.payload.data.stockNum }
   );
 
   const recordList = await request('/api/sale/record/list?pageNum=1&pageSize=10', { token });
@@ -117,6 +197,11 @@ async function main() {
     '销售详情包含明细',
     recordDetail.payload
   );
+  check(
+    detailItem && Number(detailItem.costPrice) === expectedCost,
+    '销售明细快照加权成本',
+    { expected: expectedCost, actual: detailItem?.costPrice }
+  );
 
   const statistics = await request('/api/sale/statistics', { token });
   const productStat = statistics.payload.data?.productStats?.find(
@@ -127,13 +212,21 @@ async function main() {
     '销售统计按售价聚合',
     statistics.payload
   );
+  check(
+    typeof statistics.payload.data?.summary?.totalProfit === 'number',
+    '管理员可见成本毛利',
+    statistics.payload
+  );
 
   const logs = await request('/api/stock/log/list?pageNum=1&pageSize=20', { token });
+  const saleOutLog = logs.payload.data?.list?.find(
+    (row) => String(row.remark).includes(saleNo) && row.changeType === 2
+  );
+  check(logs.payload.code === 200 && saleOutLog, '销售生成出库流水', logs.payload);
   check(
-    logs.payload.code === 200 &&
-      logs.payload.data.list.some((row) => String(row.remark).includes(saleNo)),
-    '销售生成出库流水',
-    logs.payload
+    saleOutLog?.bizType === 2 && saleOutLog?.bizTypeName === '销售出库',
+    '销售流水标记为销售出库',
+    saleOutLog
   );
 
   const warn = await request('/api/stock/warn/list?warnStatus=2', { token });
@@ -144,6 +237,16 @@ async function main() {
     warn.payload
   );
 
+  const stockStats = await request('/api/stock/statistics', { token });
+  check(
+    stockStats.payload.code === 200 && typeof stockStats.payload.data.totalStockValue === 'number',
+    '管理员可见库存总价值',
+    stockStats.payload
+  );
+
+  const overviewBeforeReturn = await request('/api/dashboard/overview', { token });
+  const inboundBeforeReturn = overviewBeforeReturn.payload.data.monthInboundQuantity;
+
   const returned = await request('/api/sale/record/return', {
     method: 'POST',
     token,
@@ -153,10 +256,495 @@ async function main() {
 
   const productAfterReturn = await request('/api/product/1', { token });
   check(
-    Number(productAfterReturn.payload.data.stockNum) === stockBefore,
+    Number(productAfterReturn.payload.data.stockNum) === stockBeforeSale,
     '退货后库存恢复',
-    { before: stockBefore, after: productAfterReturn.payload.data.stockNum }
+    { before: stockBeforeSale, after: productAfterReturn.payload.data.stockNum }
   );
+  check(
+    Number(productAfterReturn.payload.data.costPrice) === expectedCost,
+    '退货不改变加权成本',
+    { expected: expectedCost, actual: productAfterReturn.payload.data.costPrice }
+  );
+
+  const returnLogs = await request('/api/stock/log/list?productId=1&pageNum=1&pageSize=20', {
+    token,
+  });
+  const saleReturnLog = returnLogs.payload.data?.list?.find(
+    (row) => String(row.remark).includes(saleNo) && row.changeType === 1
+  );
+  check(
+    saleReturnLog?.bizType === 3 && saleReturnLog?.bizTypeName === '销售退货',
+    '退货流水标记为销售退货',
+    returnLogs.payload
+  );
+
+  const overviewAfterReturn = await request('/api/dashboard/overview', { token });
+  check(
+    overviewAfterReturn.payload.data.monthInboundQuantity === inboundBeforeReturn,
+    '销售退货不计入本月收货数量',
+    { before: inboundBeforeReturn, after: overviewAfterReturn.payload.data.monthInboundQuantity }
+  );
+
+  /* ---------- 商品库存只能由单据驱动：新建 + 期初入库 ---------- */
+  const newProduct = await request('/api/product', {
+    method: 'POST',
+    token,
+    body: {
+      productName: '冒烟期初商品',
+      categoryId: 1,
+      salePrice: 5,
+      costPrice: 2,
+      // 故意传库存和状态，验证后端会忽略，统一从 0 开始
+      stockNum: 100,
+      status: 1,
+      warnNum: 1,
+    },
+  });
+  check(newProduct.payload.code === 200 && newProduct.payload.data?.id, '新建商品', newProduct.payload);
+  const newProductId = newProduct.payload.data.id;
+
+  const newProductBeforeInbound = await request(`/api/product/${newProductId}`, { token });
+  check(
+    Number(newProductBeforeInbound.payload.data.stockNum) === 0 &&
+      Number(newProductBeforeInbound.payload.data.status) === 0,
+    '新建商品库存固定为 0 并自动下架',
+    newProductBeforeInbound.payload
+  );
+
+  const openingInbound = await request('/api/stock/inbound', {
+    method: 'POST',
+    token,
+    body: { productId: newProductId, quantity: 5, inboundPrice: 3, remark: '期初入库' },
+  });
+  check(openingInbound.payload.code === 200, '期初入库', openingInbound.payload);
+
+  const newProductAfterInbound = await request(`/api/product/${newProductId}`, { token });
+  check(
+    Number(newProductAfterInbound.payload.data.stockNum) === 5 &&
+      Number(newProductAfterInbound.payload.data.status) === 1 &&
+      Number(newProductAfterInbound.payload.data.costPrice) === 3,
+    '期初入库后库存、状态、成本正确',
+    newProductAfterInbound.payload
+  );
+
+  const openingLogs = await request(
+    `/api/stock/log/list?productId=${newProductId}&pageNum=1&pageSize=10`,
+    { token }
+  );
+  const openingLog = openingLogs.payload.data?.list?.find((row) => row.changeType === 1);
+  check(
+    openingLog?.bizType === 6 && openingLog?.bizTypeName === '期初入库',
+    '首次入库标记为期初入库',
+    openingLogs.payload
+  );
+
+  /* ---------- 收银员：成本 / 毛利字段隔离 + 只能看自己的单据 ---------- */
+  const operatorLogin = await request('/api/user/login', {
+    method: 'POST',
+    body: { username: 'shouyin01', password: '123456' },
+  });
+  check(
+    operatorLogin.payload.code === 200 &&
+      operatorLogin.payload.data?.token &&
+      Array.isArray(operatorLogin.payload.data.permissions) &&
+      operatorLogin.payload.data.permissions.includes('sale:create') &&
+      !operatorLogin.payload.data.permissions.includes('stock:in'),
+    '收银员登录并返回岗位权限',
+    operatorLogin.payload
+  );
+  const operatorToken = operatorLogin.payload.data.token;
+
+  const operatorProduct = await request('/api/product/1', { token: operatorToken });
+  check(
+    operatorProduct.payload.code === 200 &&
+      operatorProduct.payload.data.costPrice === undefined &&
+      operatorProduct.payload.data.salePrice !== undefined,
+    '收银员看不到商品成本',
+    operatorProduct.payload
+  );
+
+  const operatorProducts = await request('/api/product/list?pageNum=1&pageSize=100', {
+    token: operatorToken,
+  });
+  check(
+    operatorProducts.payload.code === 200 &&
+      operatorProducts.payload.data.list.every((row) => row.costPrice === undefined),
+    '收银员商品列表不含成本',
+    operatorProducts.payload
+  );
+
+  const operatorAdminRecord = await request(`/api/sale/record/${saleId}`, {
+    token: operatorToken,
+  });
+  check(operatorAdminRecord.payload.code === 403, '收银员不能查看他人销售单', operatorAdminRecord.payload);
+
+  const cashierSale = await request('/api/sale/record', {
+    method: 'POST',
+    token: operatorToken,
+    body: { payType: 1, items: [{ productId: 1, quantity: 1 }] },
+  });
+  check(
+    cashierSale.payload.code === 200 && cashierSale.payload.data?.saleNo,
+    '收银员可以销售开单',
+    cashierSale.payload
+  );
+  const cashierSaleId = cashierSale.payload.data.id;
+  const cashierSaleNo = cashierSale.payload.data.saleNo;
+  check(cashierSale.payload.data.totalAmount === 2, '收银员开单金额正确', cashierSale.payload.data);
+
+  const operatorOwnRecord = await request(`/api/sale/record/${cashierSaleId}`, {
+    token: operatorToken,
+  });
+  check(
+    operatorOwnRecord.payload.code === 200 &&
+      operatorOwnRecord.payload.data.items.every((item) => item.costPrice === undefined) &&
+      operatorOwnRecord.payload.data.items.some((item) => item.salePrice !== undefined),
+    '收银员能看到自己的销售单且看不到成本',
+    operatorOwnRecord.payload
+  );
+
+  const operatorRecordList = await request('/api/sale/record/list?pageNum=1&pageSize=100', {
+    token: operatorToken,
+  });
+  check(
+    operatorRecordList.payload.code === 200 &&
+      operatorRecordList.payload.data.list.every((row) => row.operator === '张敏') &&
+      operatorRecordList.payload.data.list.every((row) => row.saleNo !== saleNo) &&
+      operatorRecordList.payload.data.list.some((row) => row.saleNo === cashierSaleNo),
+    '收银员只能查看自己的销售单',
+    operatorRecordList.payload
+  );
+
+  const operatorOverview = await request('/api/dashboard/overview', { token: operatorToken });
+  check(
+    operatorOverview.payload.code === 200 &&
+      operatorOverview.payload.data.todayProfitAmount === undefined &&
+      operatorOverview.payload.data.monthProfitAmount === undefined &&
+      operatorOverview.payload.data.monthTrend === undefined,
+    '收银员看不到利润指标',
+    operatorOverview.payload
+  );
+
+  const operatorStats = await request('/api/sale/statistics', { token: operatorToken });
+  check(operatorStats.payload.code === 403, '收银员不能访问销售统计', operatorStats.payload);
+
+  const operatorStockStats = await request('/api/stock/statistics', { token: operatorToken });
+  check(operatorStockStats.payload.code === 403, '收银员不能访问库存统计', operatorStockStats.payload);
+
+  const operatorLogs = await request('/api/stock/log/list?pageNum=1&pageSize=10', {
+    token: operatorToken,
+  });
+  check(operatorLogs.payload.code === 403, '收银员不能访问库存流水', operatorLogs.payload);
+
+  /* ---------- 仓管：可以出入库，不能销售 ---------- */
+  const warehouseLogin = await request('/api/user/login', {
+    method: 'POST',
+    body: { username: 'cangku01', password: '123456' },
+  });
+  check(
+    warehouseLogin.payload.code === 200 && warehouseLogin.payload.data?.token,
+    '仓管登录',
+    warehouseLogin.payload
+  );
+  const warehouseToken = warehouseLogin.payload.data.token;
+
+  const warehouseProduct = await request('/api/product/1', { token: warehouseToken });
+  check(
+    warehouseProduct.payload.code === 200 &&
+      warehouseProduct.payload.data.costPrice === undefined,
+    '仓管看不到商品成本',
+    warehouseProduct.payload
+  );
+
+  const warehouseLogs = await request('/api/stock/log/list?pageNum=1&pageSize=100', {
+    token: warehouseToken,
+  });
+  check(
+    warehouseLogs.payload.code === 200 &&
+      warehouseLogs.payload.data.list.every((row) => row.inboundPrice === undefined),
+    '仓管看不到入库单价',
+    warehouseLogs.payload
+  );
+  check(
+    warehouseLogs.payload.data.list.some(
+      (row) => row.changeType === 2 && row.bizType === 7 && row.bizTypeName === '手工调整'
+    ),
+    '出库流水可区分手工调整',
+    warehouseLogs.payload
+  );
+
+  const warehouseStockStats = await request('/api/stock/statistics', { token: warehouseToken });
+  check(
+    warehouseStockStats.payload.code === 200 &&
+      warehouseStockStats.payload.data.totalStockValue === undefined,
+    '仓管看不到库存总价值',
+    warehouseStockStats.payload
+  );
+
+  const warehouseSale = await request('/api/sale/record', {
+    method: 'POST',
+    token: warehouseToken,
+    body: {},
+  });
+  check(warehouseSale.payload.code === 403, '仓管不能销售开单', warehouseSale.payload);
+
+  const warehouseSaleList = await request('/api/sale/record/list?pageNum=1&pageSize=10', {
+    token: warehouseToken,
+  });
+  check(warehouseSaleList.payload.code === 403, '仓管不能查看销售单', warehouseSaleList.payload);
+
+  const warehouseInbound = await request('/api/stock/inbound', {
+    method: 'POST',
+    token: warehouseToken,
+    body: {},
+  });
+  check(
+    warehouseInbound.payload.code === 400,
+    '仓管有入库权限（业务校验拦截空参数）',
+    warehouseInbound.payload
+  );
+
+  const warehouseOutbound = await request('/api/stock/outbound', {
+    method: 'POST',
+    token: warehouseToken,
+    body: {},
+  });
+  check(
+    warehouseOutbound.payload.code === 400,
+    '仓管有出库权限（业务校验拦截空参数）',
+    warehouseOutbound.payload
+  );
+
+  /* ---------- 会计：可以看全部销售单，不能开单 ---------- */
+  const accountantLogin = await request('/api/user/login', {
+    method: 'POST',
+    body: { username: 'kuaiji01', password: '123456' },
+  });
+  check(
+    accountantLogin.payload.code === 200 && accountantLogin.payload.data?.token,
+    '会计登录',
+    accountantLogin.payload
+  );
+  const accountantToken = accountantLogin.payload.data.token;
+
+  const accountantRecords = await request('/api/sale/record/list?pageNum=1&pageSize=100', {
+    token: accountantToken,
+  });
+  check(
+    accountantRecords.payload.code === 200 &&
+      accountantRecords.payload.data.list.some((row) => row.saleNo === saleNo) &&
+      accountantRecords.payload.data.list.some((row) => row.saleNo === cashierSaleNo),
+    '会计可以查看全部销售单',
+    accountantRecords.payload
+  );
+
+  const accountantRecord = await request(`/api/sale/record/${saleId}`, {
+    token: accountantToken,
+  });
+  check(
+    accountantRecord.payload.code === 200 &&
+      accountantRecord.payload.data.items.every((item) => item.costPrice === undefined),
+    '会计查看销售单时看不到成本',
+    accountantRecord.payload
+  );
+
+  const accountantSale = await request('/api/sale/record', {
+    method: 'POST',
+    token: accountantToken,
+    body: {},
+  });
+  check(accountantSale.payload.code === 403, '会计不能销售开单', accountantSale.payload);
+
+  const accountantStats = await request('/api/sale/statistics', { token: accountantToken });
+  check(accountantStats.payload.code === 403, '会计不能访问销售统计', accountantStats.payload);
+
+  const accountantStockStats = await request('/api/stock/statistics', {
+    token: accountantToken,
+  });
+  check(
+    accountantStockStats.payload.code === 200 &&
+      accountantStockStats.payload.data.totalStockValue === undefined,
+    '会计看不到库存总价值',
+    accountantStockStats.payload
+  );
+
+  /* ---------- 盘点闭环：仓管制单/提交，管理员审核 ---------- */
+  const createTake = await request('/api/stocktake', {
+    method: 'POST',
+    token: warehouseToken,
+    body: { categoryId: 1, remark: '冒烟盘点' },
+  });
+  check(
+    createTake.payload.code === 200 && createTake.payload.data?.id,
+    '仓管生成盘点任务',
+    createTake.payload
+  );
+  const takeId = createTake.payload.data.id;
+  const takeNo = createTake.payload.data.takeNo;
+
+  const takeDetailBefore = await request(`/api/stocktake/${takeId}`, { token: warehouseToken });
+  check(
+    takeDetailBefore.payload.code === 200 &&
+      takeDetailBefore.payload.data.status === 0 &&
+      takeDetailBefore.payload.data.items.length > 1 &&
+      takeDetailBefore.payload.data.items.every(
+        (it) => it.costPrice === undefined && it.diffAmount === undefined
+      ) &&
+      takeDetailBefore.payload.data.totalGainAmount === undefined,
+    '仓管看盘点单不含成本金额',
+    takeDetailBefore.payload
+  );
+
+  const takeItems = takeDetailBefore.payload.data.items;
+  const gainItem = takeItems[0];
+  const lossItem = takeItems[1];
+  const gainBookQty = Number(gainItem.bookQty);
+  const lossBookQty = Number(lossItem.bookQty);
+  check(lossBookQty >= 1, '盘点样例商品库存足够', { lossBookQty });
+
+  const saveTake = await request(`/api/stocktake/${takeId}/items`, {
+    method: 'PUT',
+    token: warehouseToken,
+    body: {
+      items: [
+        { id: gainItem.id, actualQty: gainBookQty + 2, reason: '赠品' },
+        { id: lossItem.id, actualQty: lossBookQty - 1, reason: '破损' },
+      ],
+    },
+  });
+  check(saveTake.payload.code === 200, '仓管保存实盘数量', saveTake.payload);
+
+  const submitTake = await request(`/api/stocktake/${takeId}/submit`, {
+    method: 'POST',
+    token: warehouseToken,
+  });
+  check(submitTake.payload.code === 200, '仓管提交盘点单', submitTake.payload);
+
+  const warehouseAudit = await request(`/api/stocktake/${takeId}/audit`, {
+    method: 'POST',
+    token: warehouseToken,
+  });
+  check(warehouseAudit.payload.code === 403, '仓管不能审核盘点', warehouseAudit.payload);
+
+  const adminAudit = await request(`/api/stocktake/${takeId}/audit`, {
+    method: 'POST',
+    token,
+  });
+  check(adminAudit.payload.code === 200, '管理员审核盘点', adminAudit.payload);
+
+  const takeDetailAfter = await request(`/api/stocktake/${takeId}`, { token });
+  check(
+    takeDetailAfter.payload.code === 200 &&
+      takeDetailAfter.payload.data.status === 2 &&
+      Number(takeDetailAfter.payload.data.totalGainQty) === 2 &&
+      Number(takeDetailAfter.payload.data.totalLossQty) === 1 &&
+      Number(takeDetailAfter.payload.data.totalGainAmount) > 0 &&
+      Number(takeDetailAfter.payload.data.totalLossAmount) > 0,
+    '盘点审核后汇总正确',
+    takeDetailAfter.payload
+  );
+
+  const gainProductAfter = await request(`/api/product/${gainItem.productId}`, { token });
+  const lossProductAfter = await request(`/api/product/${lossItem.productId}`, { token });
+  check(
+    Number(gainProductAfter.payload.data.stockNum) === gainBookQty + 2,
+    '盘盈商品库存增加',
+    { before: gainBookQty, after: gainProductAfter.payload.data.stockNum }
+  );
+  check(
+    Number(lossProductAfter.payload.data.stockNum) === lossBookQty - 1,
+    '盘亏商品库存减少',
+    { before: lossBookQty, after: lossProductAfter.payload.data.stockNum }
+  );
+
+  const takeLogs = await request('/api/stock/log/list?pageNum=1&pageSize=100', { token });
+  const takeGainLog = takeLogs.payload.data.list.find(
+    (row) => String(row.remark).includes(takeNo) && row.bizType === 4
+  );
+  const takeLossLog = takeLogs.payload.data.list.find(
+    (row) => String(row.remark).includes(takeNo) && row.bizType === 5
+  );
+  check(
+    takeGainLog?.bizTypeName === '盘点盘盈' && takeLossLog?.bizTypeName === '盘点盘亏',
+    '盘点审核写入盘盈/盘亏流水',
+    takeLogs.payload
+  );
+
+  const doubleAudit = await request(`/api/stocktake/${takeId}/audit`, {
+    method: 'POST',
+    token,
+  });
+  check(doubleAudit.payload.code === 400, '盘点单不能重复审核', doubleAudit.payload);
+
+  const accountantTakeList = await request('/api/stocktake/list?pageNum=1&pageSize=10', {
+    token: accountantToken,
+  });
+  check(
+    accountantTakeList.payload.code === 200 &&
+      accountantTakeList.payload.data.list.some(
+        (row) => row.takeNo === takeNo && row.totalGainAmount === undefined
+      ),
+    '会计可看盘点但看不到盈亏金额',
+    accountantTakeList.payload
+  );
+
+  const cashierTakeList = await request('/api/stocktake/list?pageNum=1&pageSize=10', {
+    token: operatorToken,
+  });
+  check(cashierTakeList.payload.code === 403, '收银员不能访问盘点', cashierTakeList.payload);
+
+  /* ---------- 操作日志 ---------- */
+  const opLogs = await request(
+    '/api/operation-log/list?pageNum=1&pageSize=100&module=stocktake&action=audit',
+    { token }
+  );
+  check(
+    opLogs.payload.code === 200 && opLogs.payload.data.list.some((row) => row.bizNo === takeNo),
+    '操作日志记录盘点审核',
+    opLogs.payload
+  );
+
+  const inboundOps = await request(
+    '/api/operation-log/list?pageNum=1&pageSize=100&module=stock&action=inbound',
+    { token }
+  );
+  check(
+    inboundOps.payload.code === 200 && inboundOps.payload.data.list.length > 0,
+    '操作日志记录入库',
+    inboundOps.payload
+  );
+
+  const cashierOpLogs = await request('/api/operation-log/list?pageNum=1&pageSize=10', {
+    token: operatorToken,
+  });
+  check(cashierOpLogs.payload.code === 403, '收银员不能访问操作日志', cashierOpLogs.payload);
+
+  /* ---------- 积压商品 / 供应商进货排行 ---------- */
+  const slow = await request('/api/stock/slow-moving?days=30&limit=10', {
+    token: warehouseToken,
+  });
+  check(
+    slow.payload.code === 200 && Array.isArray(slow.payload.data),
+    '仓管可查积压商品',
+    slow.payload
+  );
+
+  const supplierRank = await request('/api/dashboard/supplier-ranking?days=30&limit=10', {
+    token,
+  });
+  check(
+    supplierRank.payload.code === 200 &&
+      supplierRank.payload.data.some(
+        (row) => row.supplierName === '农夫山泉股份有限公司' && Number(row.amount) > 0
+      ),
+    '管理员可查供应商进货排行',
+    supplierRank.payload
+  );
+
+  const supplierRankCashier = await request('/api/dashboard/supplier-ranking', {
+    token: operatorToken,
+  });
+  check(supplierRankCashier.payload.code === 403, '收银员不能查供应商进货排行', supplierRankCashier.payload);
 
   const badDate = await request('/api/sale/statistics?startTime=abc', { token });
   check(badDate.payload.code === 400, '非法日期被拒绝', badDate.payload);

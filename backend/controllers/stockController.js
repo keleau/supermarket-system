@@ -10,6 +10,10 @@ const { BizError, ok, page } = require('../utils/result');
 const {
   toStr, toInt, toNum, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
 } = require('../utils/validate');
+const { movingAverageCost } = require('../utils/cost');
+const { maskStockLogPrice, maskStockStatistics } = require('../utils/finance');
+const { STOCK_BIZ, STOCK_BIZ_VALUES } = require('../utils/stockBiz');
+const { writeLog } = require('../utils/operationLog');
 
 /** 操作人一律从 token 解析，不接受前端传值（防伪造） */
 function operatorName(req) {
@@ -23,6 +27,9 @@ function logQuery(req, forcedChangeType = null) {
   const endDate = toStr(req.query.endTime);
   assertDateRange(startDate, endDate);
 
+  const bizType = toInt(req.query.bizType, null);
+  if (bizType !== null) assert(STOCK_BIZ_VALUES.includes(bizType), '业务类型取值不合法');
+
   return {
     pageNum,
     pageSize,
@@ -30,6 +37,7 @@ function logQuery(req, forcedChangeType = null) {
     productName: toStr(req.query.productName) || null,
     productId: toInt(req.query.productId, null),
     changeType: forcedChangeType !== null ? forcedChangeType : toInt(req.query.changeType, null),
+    bizType,
     startTime: startOfDay(startDate),
     endTime: endOfDay(endDate),
   };
@@ -41,7 +49,7 @@ function logQuery(req, forcedChangeType = null) {
 async function inboundList(req, res) {
   const q = logQuery(req, 1);
   const result = await stockModel.logList(q);
-  return ok(res, page(result.list, result.total, q.pageNum, q.pageSize));
+  return ok(res, page(maskStockLogPrice(result.list, req.user), result.total, q.pageNum, q.pageSize));
 }
 
 /* ------------------------------------------------------------------ */
@@ -78,17 +86,34 @@ async function inbound(req, res) {
 
     const beforeNum = product.stock_num;
     const afterNum = beforeNum + quantity;
+    // 该商品第一次入库视为期初入库；之后都按采购入库记录
+    const bizType = (await stockModel.hasInbound(conn, productId))
+      ? STOCK_BIZ.PURCHASE_IN
+      : STOCK_BIZ.OPENING;
 
     await productModel.changeStock(conn, productId, quantity);
+
+    // 入库价参与移动加权平均；未填价格时维持原均价。
+    // 商品行已加锁，beforeNum / cost_price 与本次入库是同一事务快照。
+    if (inboundPrice !== null) {
+      const nextCostPrice = movingAverageCost({
+        stockNum: beforeNum,
+        currentCost: product.cost_price,
+        inboundQty: quantity,
+        inboundPrice,
+      });
+      await productModel.updateCostPrice(conn, productId, nextCostPrice);
+    }
 
     // 原为缺货下架的商品，入库后自动上架
     if (beforeNum <= 0 && product.status === 0) {
       await productModel.updateStatus(conn, productId, 1);
     }
 
-    return stockModel.insertLog(conn, {
+    const result = await stockModel.insertLog(conn, {
       productId,
       changeType: 1,
+      bizType,
       quantity,
       beforeNum,
       afterNum,
@@ -97,6 +122,15 @@ async function inbound(req, res) {
       operator,
       remark,
     });
+
+    await writeLog(conn, req, {
+      module: 'stock',
+      action: 'inbound',
+      bizNo: result.id,
+      detail: `商品「${product.product_name}」入库 ${quantity}${product.unit || ''}，单价 ${inboundPrice ?? '—'}`,
+    });
+
+    return result;
   });
 
   return ok(res, { id: result.id });
@@ -108,7 +142,7 @@ async function inbound(req, res) {
 async function outboundList(req, res) {
   const q = logQuery(req, 2);
   const result = await stockModel.logList(q);
-  return ok(res, page(result.list, result.total, q.pageNum, q.pageSize));
+  return ok(res, page(maskStockLogPrice(result.list, req.user), result.total, q.pageNum, q.pageSize));
 }
 
 /* ------------------------------------------------------------------ */
@@ -138,15 +172,25 @@ async function outbound(req, res) {
 
     await productModel.changeStock(conn, productId, -quantity);
 
-    return stockModel.insertLog(conn, {
+    const result = await stockModel.insertLog(conn, {
       productId,
       changeType: 2,
+      bizType: STOCK_BIZ.MANUAL_ADJUST,
       quantity,
       beforeNum,
       afterNum,
       operator,
       remark,
     });
+
+    await writeLog(conn, req, {
+      module: 'stock',
+      action: 'outbound',
+      bizNo: result.id,
+      detail: `商品「${product.product_name}」出库 ${quantity}${product.unit || ''}`,
+    });
+
+    return result;
   });
 
   return ok(res, { id: result.id });
@@ -172,16 +216,26 @@ async function warnList(req, res) {
 async function logList(req, res) {
   const q = logQuery(req, null);
   const result = await stockModel.logList(q);
-  return ok(res, page(result.list, result.total, q.pageNum, q.pageSize));
+  return ok(res, page(maskStockLogPrice(result.list, req.user), result.total, q.pageNum, q.pageSize));
 }
 
 /* ------------------------------------------------------------------ */
 /* 4.5.7 库存统计                                                        */
 /* ------------------------------------------------------------------ */
 async function statistics(req, res) {
-  return ok(res, await stockModel.statistics());
+  const data = await stockModel.statistics();
+  return ok(res, maskStockStatistics(data, req.user));
+}
+
+/* ------------------------------------------------------------------ */
+/* 扩展：积压商品（有库存、近 N 天没有销售）                              */
+/* ------------------------------------------------------------------ */
+async function slowMoving(req, res) {
+  const days = Math.min(Math.max(toInt(req.query.days, 30) || 30, 1), 365);
+  const limit = Math.min(Math.max(toInt(req.query.limit, 10) || 10, 1), 50);
+  return ok(res, await stockModel.slowMoving(days, limit));
 }
 
 module.exports = {
-  inboundList, inbound, outboundList, outbound, warnList, logList, statistics,
+  inboundList, inbound, outboundList, outbound, warnList, logList, statistics, slowMoving,
 };

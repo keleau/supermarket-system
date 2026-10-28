@@ -188,7 +188,7 @@ CREATE TABLE `product` (
   `category_id`  BIGINT UNSIGNED NOT NULL COMMENT '分类 id',
   `spec`         VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '规格',
   `unit`         VARCHAR(6)    NOT NULL DEFAULT '个' COMMENT '单位',
-  `cost_price`   DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '进货价',
+  `cost_price`   DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '加权平均成本（4 位小数，入库自动更新）',
   `sale_price`   DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '销售价',
   `stock_num`    INT           NOT NULL DEFAULT 0 COMMENT '当前库存',
   `warn_num`     INT           NOT NULL DEFAULT 0 COMMENT '预警阈值',
@@ -246,7 +246,7 @@ CREATE TABLE `sale_item` (
   `category_name`  VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '分类名称（冗余快照）',
   `quantity`       INT           NOT NULL COMMENT '销售数量',
   `sale_price`     DECIMAL(10,2) NOT NULL COMMENT '销售单价',
-  `cost_price`     DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '进货成本价（毛利用）',
+  `cost_price`     DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '成本快照（销售时加权平均成本）',
   `amount`         DECIMAL(12,2) NOT NULL COMMENT '小计金额',
   PRIMARY KEY (`id`),
   KEY `idx_sale_record` (`sale_record_id`),
@@ -847,7 +847,7 @@ CREATE TABLE `sale_item` (
 1. 商品名称为空 → `{ code: 400, msg: "请输入商品名称" }`。
 2. 条码为空时后端自动生成（`690` 前缀 + 10 位序号）；条码已存在 → `{ code: 400, msg: "商品条码已存在" }`。
 3. 销售价 ≤ 0 → `{ code: 400, msg: "销售单价必须大于 0" }`。
-4. 进货价 < 0 → `{ code: 400, msg: "进货价不能为负" }`。
+4. 期初成本 < 0 → `{ code: 400, msg: "成本价不能为负" }`。
 5. 库存数 < 0 → `{ code: 400, msg: "库存不能为负" }`。
 6. 库存数为 0 时自动置 status=0（缺货自动下架）。
 

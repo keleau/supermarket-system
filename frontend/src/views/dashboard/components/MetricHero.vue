@@ -5,6 +5,7 @@
  * - 今日：今日销售额 + 今日利润，趋势线为当日趋势，环比文字"较昨日"
  * - 本月：本月销售额 + 本月利润，趋势线为本月趋势，环比文字"较上月"
  * 切换时金额滚动补间、趋势线 merge 模式平滑形变；底部"查看销售明细"携带当前周期跳转。
+ * 非管理员只展示销售额，利润块由父组件通过 showProfit=false 隐藏（后端已同步脱敏）。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { graphic } from 'echarts/core'
@@ -15,6 +16,10 @@ const props = defineProps({
   /** 结构：{ sale: {amount, rate, trend}, profit: {amount, rate, trend} } */
   today: { type: Object, required: true },
   month: { type: Object, required: true },
+  /** 是否展示利润块；非管理员为 false */
+  showProfit: { type: Boolean, default: true },
+  /** 是否能查看销售明细；无 sale:read 权限时只展示金额，不提供跳转 */
+  canViewSales: { type: Boolean, default: true },
 })
 
 const router = useRouter()
@@ -37,6 +42,7 @@ function switchPeriod(next) {
 
 /** 底部跳转链接与当前周期联动，销售记录页后续开发时读取 query.range */
 function goSale() {
+  if (!props.canViewSales) return
   router.push({ path: '/sale/record', query: { range: period.value } })
 }
 
@@ -149,11 +155,12 @@ const { chartEl: subSparkEl } = useEchart(subSpark, { notMerge: false })
 <template>
   <section
     class="metric-hero"
-    role="link"
-    tabindex="0"
-    :aria-label="ariaLabel"
-    @click="goSale"
-    @keyup.enter="goSale"
+    :class="{ 'is-static': !canViewSales }"
+    :role="canViewSales ? 'link' : null"
+    :tabindex="canViewSales ? 0 : null"
+    :aria-label="canViewSales ? ariaLabel : null"
+    @click="canViewSales && goSale()"
+    @keyup.enter="canViewSales && goSale()"
   >
     <div class="hero-glow" aria-hidden="true"></div>
 
@@ -208,10 +215,10 @@ const { chartEl: subSparkEl } = useEchart(subSpark, { notMerge: false })
       </div>
     </div>
 
-    <div class="hero-divider" aria-hidden="true"></div>
+    <div v-if="showProfit" class="hero-divider" aria-hidden="true"></div>
 
-    <!-- 副指标：利润 -->
-    <div class="hero-block">
+    <!-- 副指标：利润（非管理员隐藏） -->
+    <div v-if="showProfit" class="hero-block">
       <div class="hero-label">{{ subLabel }}<span class="hero-unit">元</span></div>
       <div class="hero-value num">¥{{ money(displaySub) }}</div>
       <div class="hero-trend">
@@ -230,7 +237,7 @@ const { chartEl: subSparkEl } = useEchart(subSpark, { notMerge: false })
       </div>
     </div>
 
-    <div class="hero-foot">
+    <div v-if="canViewSales" class="hero-foot">
       查看销售明细
       <el-icon class="foot-arrow"><ArrowRight /></el-icon>
     </div>
@@ -255,6 +262,12 @@ const { chartEl: subSparkEl } = useEchart(subSpark, { notMerge: false })
 
 .metric-hero:hover {
   box-shadow: var(--shadow-md);
+}
+
+.metric-hero.is-static,
+.metric-hero.is-static:hover {
+  cursor: default;
+  box-shadow: none;
 }
 
 .metric-hero:active {

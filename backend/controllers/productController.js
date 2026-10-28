@@ -4,16 +4,21 @@
 const productModel = require('../models/productModel');
 const categoryModel = require('../models/categoryModel');
 const supplierModel = require('../models/supplierModel');
-const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
-const { BizError, ok, page } = require('../utils/result');
-const { toStr, toInt, toNum, round2, paging, assert } = require('../utils/validate');
+const { ok, page } = require('../utils/result');
+const { toStr, toInt, toNum, round2, round4, paging, assert } = require('../utils/validate');
+const { assertCostUnchanged } = require('../utils/cost');
+const { maskProductCost } = require('../utils/finance');
+const { writeLog } = require('../utils/operationLog');
 
 /**
  * 解析并校验商品入参
+ * @param {object} body
+ * @param {{ withCost?: boolean }} [options] withCost=true 仅用于新增（期初成本）；
+ *   编辑不允许写入成本，成本只能由入库按移动加权平均自动计算。
  * @returns 规范化后的字段对象
  */
-function buildPayload(body) {
+function buildPayload(body, { withCost = false } = {}) {
   const b = body || {};
 
   const productName = toStr(b.productName);
@@ -29,20 +34,14 @@ function buildPayload(body) {
   const salePrice = round2(toNum(b.salePrice, 0));
   assert(salePrice > 0, '销售单价必须大于 0');
 
-  const costPrice = round2(toNum(b.costPrice, 0));
-  assert(costPrice >= 0, '进货价不能为负');
-
-  const stockNum = toInt(b.stockNum, 0);
-  assert(stockNum >= 0, '库存不能为负');
+  const costPrice = round4(toNum(b.costPrice, 0));
+  assert(costPrice >= 0, '成本价不能为负');
 
   const warnNum = toInt(b.warnNum, 0);
   assert(warnNum >= 0, '预警值不能为负');
 
   const supplierId = toInt(b.supplierId, null);
-
-  // 库存为 0 时自动下架
-  let status = toInt(b.status, 1) === 0 ? 0 : 1;
-  if (stockNum === 0) status = 0;
+  const status = toInt(b.status, 1) === 0 ? 0 : 1;
 
   return {
     productCode,
@@ -50,9 +49,8 @@ function buildPayload(body) {
     categoryId,
     spec: toStr(b.spec),
     unit: toStr(b.unit, '个'),
-    costPrice,
+    ...(withCost ? { costPrice } : {}),
     salePrice,
-    stockNum,
     warnNum,
     supplierId,
     imageUrl: toStr(b.imageUrl),
@@ -83,7 +81,7 @@ async function list(req, res) {
     categoryId: toInt(req.query.categoryId, null),
     status: toInt(req.query.status, null),
   });
-  return ok(res, page(result.list, result.total, pageNum, pageSize));
+  return ok(res, page(maskProductCost(result.list, req.user), result.total, pageNum, pageSize));
 }
 
 /* 4.3.2 商品详情 */
@@ -94,7 +92,7 @@ async function detail(req, res) {
   const product = await productModel.findById(id);
   assert(product, '商品不存在');
 
-  return ok(res, product);
+  return ok(res, maskProductCost(product, req.user));
 }
 
 /**
@@ -109,7 +107,11 @@ async function options(req, res) {
 
 /* 4.3.3 新增商品 */
 async function create(req, res) {
-  const payload = buildPayload(req.body);
+  // 新增时允许填写期初成本；首次入库后由加权平均接管
+  const payload = buildPayload(req.body, { withCost: true });
+  // 库存只能由入库 / 盘点等单据驱动：新建商品库存固定为 0，入库后自动上架
+  payload.stockNum = 0;
+  payload.status = 0;
   await assertRelations(payload);
 
   const created = await transaction(async (conn) => {
@@ -119,7 +121,14 @@ async function create(req, res) {
     } else {
       assert(!(await productModel.existsCode(payload.productCode)), '商品条码已存在');
     }
-    return productModel.create(conn, payload);
+    const createdRow = await productModel.create(conn, payload);
+    await writeLog(conn, req, {
+      module: 'product',
+      action: 'create',
+      bizNo: createdRow.id,
+      detail: `创建商品「${payload.productName}」`,
+    });
+    return createdRow;
   });
 
   return ok(res, created);
@@ -133,7 +142,12 @@ async function update(req, res) {
   const exist = await productModel.findById(id);
   assert(exist, '商品不存在');
 
+  // 成本只能由入库自动计算：旧前端带回原值可通过，真正改动会被拒绝
+  assertCostUnchanged(toNum(req.body.costPrice, null), exist.costPrice);
+
   const payload = buildPayload(req.body);
+  // 库存为 0 时保持下架；库存 > 0 时允许手动下架/上架
+  if (exist.stockNum <= 0) payload.status = 0;
   await assertRelations(payload);
 
   // 条码为空时保留原条码，否则校验唯一
@@ -143,28 +157,13 @@ async function update(req, res) {
     assert(!(await productModel.existsCode(payload.productCode, id)), '商品条码已存在');
   }
 
-  const operator = req.user.realName || req.user.username || '';
-
-  await transaction(async (conn) => {
-    // 行锁：防止编辑库存与并发出入库/结账互相覆盖
-    const before = await productModel.findByIdForUpdate(conn, id);
-    if (!before) throw new BizError('商品不存在');
-
-    await productModel.update(conn, id, payload);
-
-    // 编辑时直接改了库存 → 补一条调整流水，保证流水账与库存始终可对账
-    const diff = payload.stockNum - before.stock_num;
-    if (diff !== 0) {
-      await stockModel.insertLog(conn, {
-        productId: id,
-        changeType: diff > 0 ? 1 : 2,
-        quantity: Math.abs(diff),
-        beforeNum: before.stock_num,
-        afterNum: payload.stockNum,
-        operator,
-        remark: '商品档案编辑调整库存',
-      });
-    }
+  // 库存不在此更新：只能由入库 / 出库 / 销售 / 盘点等单据驱动
+  await productModel.update(null, id, payload);
+  await writeLog(null, req, {
+    module: 'product',
+    action: 'update',
+    bizNo: id,
+    detail: `编辑商品「${payload.productName}」`,
   });
 
   return ok(res, null);
@@ -180,6 +179,12 @@ async function remove(req, res) {
   assert(!(await productModel.hasBusinessRecords(id)), '该商品存在业务记录，无法删除');
 
   await productModel.remove(id);
+  await writeLog(null, req, {
+    module: 'product',
+    action: 'delete',
+    bizNo: id,
+    detail: `删除商品「${exist.productName}」`,
+  });
   return ok(res, null);
 }
 

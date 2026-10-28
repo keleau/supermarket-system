@@ -164,10 +164,21 @@ async function updateStatus(conn, id, status) {
 /* ------------------------------------------------------------------ */
 /* 销售明细按商品查询                                                   */
 /* ------------------------------------------------------------------ */
-async function itemListByProduct({ productId, pageNum, pageSize, offset }) {
+async function itemListByProduct({ productId, operator, pageNum, pageSize, offset }) {
+  const where = ['si.product_id = ?'];
+  const params = [productId];
+  if (operator) {
+    where.push('sr.operator = ?');
+    params.push(operator);
+  }
+  const whereSql = `WHERE ${where.join(' AND ')}`;
+
   const countRows = await query(
-    'SELECT COUNT(*) AS total FROM sale_item WHERE product_id = ?',
-    [productId]
+    `SELECT COUNT(*) AS total
+     FROM sale_item si
+     JOIN sale_record sr ON sr.id = si.sale_record_id
+     ${whereSql}`,
+    params
   );
   const total = countRows[0].total;
 
@@ -182,10 +193,10 @@ async function itemListByProduct({ productId, pageNum, pageSize, offset }) {
        si.amount
      FROM sale_item si
      JOIN sale_record sr ON sr.id = si.sale_record_id
-     WHERE si.product_id = ?
+     ${whereSql}
      ORDER BY sr.create_time DESC, si.id DESC
      LIMIT ? OFFSET ?`,
-    [productId, pageSize, offset]
+    [...params, pageSize, offset]
   );
 
   return { list, total, pageNum, pageSize };

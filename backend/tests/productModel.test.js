@@ -55,3 +55,33 @@ test('条件更新未命中（库存不足）时抛业务异常', async () => {
     (err) => err instanceof BizError && err.code === 400 && /库存不足/.test(err.message)
   );
 });
+
+test('编辑商品档案不写入成本价和库存', async () => {
+  const conn = fakeConn(1);
+  await productModel.update(conn, 7, {
+    productCode: '6900000000007',
+    productName: '测试商品',
+    categoryId: 1,
+    spec: '',
+    unit: '个',
+    salePrice: 10,
+    stockNum: 5,
+    warnNum: 1,
+    supplierId: null,
+    imageUrl: '',
+    status: 1,
+  });
+
+  assert.equal(conn.calls.length, 1);
+  assert.doesNotMatch(conn.calls[0].sql, /cost_price/);
+  assert.doesNotMatch(conn.calls[0].sql, /stock_num/);
+});
+
+test('入库后单独更新加权成本', async () => {
+  const conn = fakeConn(1);
+  await productModel.updateCostPrice(conn, 7, 6.1234);
+
+  assert.equal(conn.calls.length, 1);
+  assert.match(conn.calls[0].sql, /SET cost_price = \? WHERE id = \?/);
+  assert.deepEqual(conn.calls[0].params, [6.1234, 7]);
+});

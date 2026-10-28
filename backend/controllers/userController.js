@@ -9,6 +9,7 @@ const {
   isBlank, toInt, toStr, paging, assert, isPhone, isIdCard, isUsername, isDate,
 } = require('../utils/validate');
 const { roleFromPosition, normalizePosition } = require('../utils/role');
+const { permissionsFor } = require('../utils/permissions');
 const config = require('../config');
 
 // 默认头像：前端内置的本地扁平头像（public/avatars/a1.svg），避免外网 CDN 依赖
@@ -39,6 +40,7 @@ async function login(req, res) {
     username: user.username,
     avatar: user.avatar,
     realName: user.realName,
+    permissions: permissionsFor({ role: user.role, position: user.position }),
   });
 }
 
@@ -63,6 +65,7 @@ async function info(req, res) {
     realName: user.realName,
     role: user.role,
     position: user.position,
+    permissions: permissionsFor({ role: user.role, position: user.position }),
     avatar: user.avatar,
     phone: user.phone,
     // 个人中心展示 / 编辑所需字段（salary / joinDate 等薪资敏感字段仍不返回）

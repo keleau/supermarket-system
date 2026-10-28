@@ -26,6 +26,26 @@ function changeMeta(changeType) {
   return CHANGE_TYPES[changeType] || { label: '未知', tag: 'info' }
 }
 
+/** 业务类型标签（与后端 bizType 契约一致） */
+const BIZ_TYPES = {
+  1: { label: '采购入库', tag: 'success' },
+  2: { label: '销售出库', tag: 'warning' },
+  3: { label: '销售退货', tag: 'info' },
+  4: { label: '盘点盘盈', tag: 'success' },
+  5: { label: '盘点盘亏', tag: 'danger' },
+  6: { label: '期初入库', tag: 'success' },
+  7: { label: '手工调整', tag: 'info' },
+}
+
+const BIZ_OPTIONS = Object.entries(BIZ_TYPES).map(([value, meta]) => ({
+  value: Number(value),
+  label: meta.label,
+}))
+
+function bizMeta(bizType) {
+  return BIZ_TYPES[bizType] || { label: '其他', tag: 'info' }
+}
+
 /* ---------------- 列表（服务端分页） ---------------- */
 
 const loading = ref(false)
@@ -36,12 +56,14 @@ const pagination = reactive({ pageNum: 1, pageSize: 10 })
 const filterForm = reactive({
   productName: '',
   changeType: '',
+  bizType: '',
   dateRange: [],
 })
 
 const appliedFilters = reactive({
   productName: '',
   changeType: '',
+  bizType: '',
   startTime: '',
   endTime: '',
 })
@@ -54,6 +76,7 @@ async function loadList() {
       pageSize: pagination.pageSize,
       productName: appliedFilters.productName || undefined,
       changeType: appliedFilters.changeType === '' ? undefined : appliedFilters.changeType,
+      bizType: appliedFilters.bizType === '' ? undefined : appliedFilters.bizType,
       startTime: appliedFilters.startTime || undefined,
       endTime: appliedFilters.endTime || undefined,
     })
@@ -67,6 +90,7 @@ async function loadList() {
 function handleQuery() {
   appliedFilters.productName = filterForm.productName.trim()
   appliedFilters.changeType = filterForm.changeType
+  appliedFilters.bizType = filterForm.bizType
   appliedFilters.startTime = filterForm.dateRange?.[0] || ''
   appliedFilters.endTime = filterForm.dateRange?.[1] || ''
   pagination.pageNum = 1
@@ -76,6 +100,7 @@ function handleQuery() {
 function handleReset() {
   filterForm.productName = ''
   filterForm.changeType = ''
+  filterForm.bizType = ''
   filterForm.dateRange = []
   handleQuery()
 }
@@ -112,11 +137,12 @@ function exportLogs() {
   const today = new Date().toISOString().slice(0, 10)
   downloadCsv(
     `出入库流水_${today}.csv`,
-    ['流水时间', '商品名称', '类型', '变动数量', '变动前', '变动后', '操作人', '备注'],
+    ['流水时间', '商品名称', '类型', '业务类型', '变动数量', '变动前', '变动后', '操作人', '备注'],
     list.value.map((l) => [
       l.createTime,
       l.productName,
       CHANGE_TYPES[l.changeType]?.label || '未知',
+      l.bizTypeName || bizMeta(l.bizType).label,
       l.quantity,
       l.beforeNum,
       l.afterNum,
@@ -147,6 +173,11 @@ function exportLogs() {
           <el-select v-model="filterForm.changeType" placeholder="全部" clearable style="width: 120px">
             <el-option label="入库" :value="1" />
             <el-option label="出库" :value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="业务类型">
+          <el-select v-model="filterForm.bizType" placeholder="全部" clearable style="width: 130px">
+            <el-option v-for="opt in BIZ_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="日期">
@@ -202,6 +233,13 @@ function exportLogs() {
           <template #default="{ row }">
             <el-tag :type="changeMeta(row.changeType).tag" effect="light" round size="small">
               {{ changeMeta(row.changeType).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="业务类型" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="bizMeta(row.bizType).tag" effect="plain" round size="small">
+              {{ row.bizTypeName || bizMeta(row.bizType).label }}
             </el-tag>
           </template>
         </el-table-column>

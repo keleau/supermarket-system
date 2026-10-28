@@ -28,6 +28,7 @@
  * @property {string} username
  * @property {string} realName
  * @property {string} avatar
+ * @property {string[]} permissions   岗位权限码数组，'*' 表示全部权限
  *
  * @typedef {Object} UserInfo         GET /api/user/info 返回 data
  * @property {number} id
@@ -35,6 +36,7 @@
  * @property {string} realName
  * @property {string} role
  * @property {string} position
+ * @property {string[]} permissions   岗位权限码数组，'*' 表示全部权限
  * @property {string} avatar
  * @property {string} phone
  * @property {string} [gender]
@@ -51,9 +53,9 @@
  * @property {string} [categoryName]  后端 JOIN 好的分类名
  * @property {string} spec            规格
  * @property {string} unit            单位：个 / 箱 / 瓶 等
- * @property {string} costPrice       进货价（保留 2 位小数的字符串）
+ * @property {number} costPrice       加权平均成本（入库自动计算，4 位小数；仅管理员返回，商品编辑不可修改）
  * @property {string} salePrice       销售价（保留 2 位小数的字符串）
- * @property {number} stockNum        当前库存数量
+ * @property {number} stockNum        当前库存数量（只读，由入库/出库/销售/退货等单据驱动，商品表单不可修改）
  * @property {number} warnNum         库存预警阈值
  * @property {number} [supplierId]
  * @property {string} [supplierName]  后端 JOIN 好的供应商名
@@ -74,7 +76,7 @@
  * @typedef {Object} InboundPayload   POST /api/stock/inbound 入参
  * @property {number} productId
  * @property {number} quantity        必须 > 0，后端在事务内增加库存并生成流水
- * @property {number} [inboundPrice]  入库单价
+ * @property {number} [inboundPrice]  入库单价；填写后按移动加权平均更新商品成本，留空则维持原均价
  * @property {number} [supplierId]
  * @property {string} [remark]
  *
@@ -88,6 +90,8 @@
  * @property {number} productId
  * @property {string} productName
  * @property {number} changeType      1 入库 2 出库
+ * @property {number} bizType         业务类型：1采购入库/2销售出库/3销售退货/4盘点盘盈/5盘点盘亏/6期初入库/7手工调整
+ * @property {string} bizTypeName     业务类型名称（后端映射）
  * @property {number} quantity        变动数量（正数）
  * @property {number} beforeNum       变动前库存
  * @property {number} afterNum        变动后库存

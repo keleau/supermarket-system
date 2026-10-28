@@ -22,6 +22,8 @@ import { formatInt, money } from '@/utils/format.js'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
+/** 管理员 / 会计可查看全部收银员的单据；收银员只能看自己的 */
+const canReadAll = computed(() => userStore.can('sale:read:all'))
 
 /** 支付方式（1 现金 2 微信 3 支付宝 4 银行卡） */
 const PAY_TYPES = {
@@ -285,7 +287,7 @@ async function reloadAfterWrite() {
             @keyup.enter="handleQuery"
           />
         </el-form-item>
-        <el-form-item label="收银员">
+        <el-form-item v-if="canReadAll" label="收银员">
           <el-input
             v-model="filterForm.operator"
             placeholder="姓名，精确匹配"

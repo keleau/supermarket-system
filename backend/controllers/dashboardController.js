@@ -4,6 +4,7 @@
 const dashboardModel = require('../models/dashboardModel');
 const saleModel = require('../models/saleModel');
 const { ok } = require('../utils/result');
+const { maskDashboardProfit } = require('../utils/finance');
 const { toInt, round2 } = require('../utils/validate');
 const {
   formatDate, formatDateTime, formatMonthDay, addDays, dayStart, dayEnd, eachDate,
@@ -111,7 +112,7 @@ async function overview(req, res) {
     return hit ? round2(hit.amount - hit.cost) : 0;
   });
 
-  return ok(res, {
+  const data = {
     todaySaleAmount: round2(todayStat.amount),
     todayCompareRate: compareRate(todayStat.amount, yesterdayStat.amount),
     todayTrend: todaySaleTrend,
@@ -134,7 +135,9 @@ async function overview(req, res) {
     productKindCount: kindCount,
     warnProductCount: warnCounts.warnProductCount,
     pendingStockCount: warnCounts.pendingStockCount,
-  });
+  };
+
+  return ok(res, maskDashboardProfit(data, req.user));
 }
 
 /* ------------------------------------------------------------------ */
@@ -186,4 +189,13 @@ async function hotProducts(req, res) {
   return ok(res, await saleModel.hotProducts(startTime, endTime, 5));
 }
 
-module.exports = { overview, saleTrend, stockTop, categoryStock, hotProducts };
+/* ------------------------------------------------------------------ */
+/* 扩展：供应商进货金额排行（仅管理员）                                  */
+/* ------------------------------------------------------------------ */
+async function supplierRanking(req, res) {
+  const days = Math.min(Math.max(toInt(req.query.days, 30) || 30, 1), 365);
+  const limit = Math.min(Math.max(toInt(req.query.limit, 10) || 10, 1), 50);
+  return ok(res, await dashboardModel.supplierRanking(days, limit));
+}
+
+module.exports = { overview, saleTrend, stockTop, categoryStock, hotProducts, supplierRanking };

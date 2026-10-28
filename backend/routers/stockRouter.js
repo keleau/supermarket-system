@@ -4,19 +4,20 @@
 const express = require('express');
 const ctrl = require('../controllers/stockController');
 const asyncHandler = require('../utils/asyncHandler');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
-// 出入库明细与提交（管理员与操作员均可）
-router.get('/inbound/list', authenticate, asyncHandler(ctrl.inboundList));
-router.post('/inbound', authenticate, asyncHandler(ctrl.inbound));
+// 库存查询：仓管 / 采购 / 后勤 / 会计 / 管理员
+router.get('/inbound/list', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.inboundList));
+router.get('/outbound/list', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.outboundList));
+router.get('/warn/list', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.warnList));
+router.get('/log/list', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.logList));
+router.get('/statistics', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.statistics));
+router.get('/slow-moving', authenticate, requirePermission('stock:read'), asyncHandler(ctrl.slowMoving));
 
-router.get('/outbound/list', authenticate, asyncHandler(ctrl.outboundList));
-router.post('/outbound', authenticate, asyncHandler(ctrl.outbound));
-
-router.get('/warn/list', authenticate, asyncHandler(ctrl.warnList));
-router.get('/log/list', authenticate, asyncHandler(ctrl.logList));
-router.get('/statistics', authenticate, asyncHandler(ctrl.statistics));
+// 库存操作：按岗位细分（收银员不可入库/出库）
+router.post('/inbound', authenticate, requirePermission('stock:in'), asyncHandler(ctrl.inbound));
+router.post('/outbound', authenticate, requirePermission('stock:out'), asyncHandler(ctrl.outbound));
 
 module.exports = router;

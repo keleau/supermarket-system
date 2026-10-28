@@ -30,7 +30,7 @@ export const constantRoutes = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/dashboard/DashboardPage.vue'),
-        meta: { title: '运营总览', icon: 'Odometer' },
+        meta: { title: '运营总览', icon: 'Odometer', permissions: ['dashboard:read'] },
       },
       {
         path: 'sale',
@@ -43,19 +43,19 @@ export const constantRoutes = [
             path: 'record',
             name: 'SaleRecord',
             component: () => import('@/views/sale/SaleRecordPage.vue'),
-            meta: { title: '销售记录' },
+            meta: { title: '销售记录', permissions: ['sale:read'] },
           },
           {
             path: 'checkout',
             name: 'SaleCheckout',
             component: () => import('@/views/sale/CheckoutPage.vue'),
-            meta: { title: '收银开单' },
+            meta: { title: '收银开单', permissions: ['sale:create'] },
           },
           {
             path: 'statistics',
             name: 'SaleStatistics',
             component: () => import('@/views/sale/SaleStatsPage.vue'),
-            meta: { title: '销售统计' },
+            meta: { title: '销售统计', roles: [ROLE_ADMIN] },
           },
         ],
       },
@@ -70,13 +70,13 @@ export const constantRoutes = [
             path: 'list',
             name: 'ProductList',
             component: () => import('@/views/product/ProductListPage.vue'),
-            meta: { title: '商品档案' },
+            meta: { title: '商品档案', permissions: ['product:read'] },
           },
           {
             path: 'category',
             name: 'ProductCategory',
             component: () => import('@/views/product/ProductCategoryPage.vue'),
-            meta: { title: '商品分类' },
+            meta: { title: '商品分类', permissions: ['category:read'] },
           },
         ],
       },
@@ -91,25 +91,31 @@ export const constantRoutes = [
             path: 'inbound',
             name: 'StockInbound',
             component: () => import('@/views/stock/InboundPage.vue'),
-            meta: { title: '入库明细' },
+            meta: { title: '入库明细', permissions: ['stock:read'] },
           },
           {
             path: 'outbound',
             name: 'StockOutbound',
             component: () => import('@/views/stock/InboundPage.vue'),
-            meta: { title: '出库明细' },
+            meta: { title: '出库明细', permissions: ['stock:read'] },
           },
           {
             path: 'log',
             name: 'StockLog',
             component: () => import('@/views/stock/LogPage.vue'),
-            meta: { title: '出入库流水' },
+            meta: { title: '出入库流水', permissions: ['stock:read'] },
           },
           {
             path: 'statistics',
             name: 'StockStatistics',
             component: () => import('@/views/stock/StatisticsPage.vue'),
-            meta: { title: '库存统计' },
+            meta: { title: '库存统计', permissions: ['stock:read'] },
+          },
+          {
+            path: 'stocktake',
+            name: 'StockStocktake',
+            component: () => import('@/views/stock/StocktakePage.vue'),
+            meta: { title: '库存盘点', permissions: ['stocktake:read'] },
           },
         ],
       },
@@ -117,7 +123,7 @@ export const constantRoutes = [
         path: 'supplier',
         name: 'Supplier',
         component: () => import('@/views/supplier/SupplierPage.vue'),
-        meta: { title: '供应商管理', icon: 'Connection' },
+        meta: { title: '供应商管理', icon: 'Connection', permissions: ['supplier:read'] },
       },
       {
         path: 'system',
@@ -131,6 +137,12 @@ export const constantRoutes = [
             name: 'SystemUser',
             component: () => import('@/views/system/UserManagePage.vue'),
             meta: { title: '用户管理', roles: [ROLE_ADMIN] },
+          },
+          {
+            path: 'log',
+            name: 'SystemOperationLog',
+            component: () => import('@/views/system/OperationLogPage.vue'),
+            meta: { title: '操作日志', roles: [ROLE_ADMIN] },
           },
           {
             path: 'profile',
@@ -183,8 +195,9 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 刷新页面后 token 仍在，但内存中的用户资料已丢失：用 token 拉一次用户信息
-  if (!userStore.role) {
+  // 刷新页面后 token 仍在，但内存中的用户资料已丢失：
+  // 旧版本的本地缓存可能没有 permissions，也要重新拉一次
+  if (!userStore.role || userStore.permissions.length === 0) {
     try {
       await userStore.fetchUserInfo()
     } catch {
@@ -197,6 +210,14 @@ router.beforeEach(async (to, _from, next) => {
   // 角色鉴权：目标路由限定了角色，而当前用户不在允许范围内
   const allowRoles = to.meta.roles
   if (allowRoles && allowRoles.length > 0 && !allowRoles.includes(userStore.role)) {
+    ElMessage.error('抱歉，您没有访问该页面的权限')
+    next('/dashboard')
+    return
+  }
+
+  // 岗位权限鉴权：后端按职位下发的权限码
+  const allowPermissions = to.meta.permissions
+  if (allowPermissions && allowPermissions.length > 0 && !userStore.canAny(allowPermissions)) {
     ElMessage.error('抱歉，您没有访问该页面的权限')
     next('/dashboard')
     return
