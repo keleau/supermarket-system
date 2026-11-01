@@ -5,7 +5,7 @@
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const PORT = Number(process.env.SMOKE_PORT) || 3100;
+const PORT = Number(process.env.SMOKE_PORT) || 3210;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let child = null;
@@ -567,6 +567,254 @@ async function main() {
     '会计看不到库存总价值',
     accountantStockStats.payload
   );
+
+  /* ---------- 采购：采购制单 → 仓管收货 → 管理员付款 ---------- */
+  const purchaserLogin = await request('/api/user/login', {
+    method: 'POST',
+    body: { username: 'caigou01', password: '123456' },
+  });
+  check(
+    purchaserLogin.payload.code === 200 &&
+      purchaserLogin.payload.data?.token &&
+      purchaserLogin.payload.data.permissions.includes('purchase:create') &&
+      !purchaserLogin.payload.data.permissions.includes('purchase:receive') &&
+      !purchaserLogin.payload.data.permissions.includes('stock:in'),
+    '采购登录并返回制单权限',
+    purchaserLogin.payload
+  );
+  const purchaserToken = purchaserLogin.payload.data.token;
+
+  const purchaseItems = [
+    { productId: 1, quantity: 4, price: 2.5 },
+    { productId: 2, quantity: 3, price: 3 },
+  ];
+  const createPurchase = await request('/api/purchase', {
+    method: 'POST',
+    token: purchaserToken,
+    body: { supplierId: 1, remark: '冒烟采购', items: purchaseItems },
+  });
+  check(
+    createPurchase.payload.code === 200 &&
+      createPurchase.payload.data?.id &&
+      /^CG\d{8}-\d{3}$/.test(createPurchase.payload.data.orderNo || ''),
+    '采购创建草稿单',
+    createPurchase.payload
+  );
+  const purchaseId = createPurchase.payload.data.id;
+  const purchaseNo = createPurchase.payload.data.orderNo;
+  const purchaseTotal = 4 * 2.5 + 3 * 3;
+
+  const purchaseDetailBefore = await request(`/api/purchase/${purchaseId}`, {
+    token: purchaserToken,
+  });
+  check(
+    purchaseDetailBefore.payload.code === 200 &&
+      purchaseDetailBefore.payload.data.status === 0 &&
+      purchaseDetailBefore.payload.data.items.length === 2 &&
+      Number(purchaseDetailBefore.payload.data.totalAmount) === purchaseTotal,
+    '采购草稿金额与明细正确',
+    purchaseDetailBefore.payload
+  );
+
+  const updatePurchase = await request(`/api/purchase/${purchaseId}`, {
+    method: 'PUT',
+    token: purchaserToken,
+    body: { supplierId: 1, remark: '冒烟采购修改', items: purchaseItems },
+  });
+  check(updatePurchase.payload.code === 200, '采购可编辑草稿', updatePurchase.payload);
+
+  const purchaserReceive = await request(`/api/purchase/${purchaseId}/receive`, {
+    method: 'POST',
+    token: purchaserToken,
+  });
+  check(purchaserReceive.payload.code === 403, '采购不能自己确认收货', purchaserReceive.payload);
+
+  const purchaserPay = await request(`/api/purchase/${purchaseId}/pay`, {
+    method: 'POST',
+    token: purchaserToken,
+    body: { amount: 1 },
+  });
+  check(purchaserPay.payload.code === 403, '采购不能登记付款', purchaserPay.payload);
+
+  const submitPurchase = await request(`/api/purchase/${purchaseId}/submit`, {
+    method: 'POST',
+    token: purchaserToken,
+  });
+  check(submitPurchase.payload.code === 200, '采购提交采购单', submitPurchase.payload);
+
+  const editAfterSubmit = await request(`/api/purchase/${purchaseId}`, {
+    method: 'PUT',
+    token: purchaserToken,
+    body: { supplierId: 1, remark: '提交后修改', items: purchaseItems },
+  });
+  check(editAfterSubmit.payload.code === 400, '采购单提交后不能再编辑', editAfterSubmit.payload);
+
+  const purchaseProduct1Before = await request('/api/product/1', { token });
+  const purchaseProduct2Before = await request('/api/product/2', { token });
+  const p1StockBefore = Number(purchaseProduct1Before.payload.data.stockNum);
+  const p1CostBefore = Number(purchaseProduct1Before.payload.data.costPrice);
+  const p2StockBefore = Number(purchaseProduct2Before.payload.data.stockNum);
+  const p1ExpectedCost = Math.round(
+    (((p1StockBefore * p1CostBefore + 4 * 2.5) / (p1StockBefore + 4)) + Number.EPSILON) * 10000
+  ) / 10000;
+
+  const receivePurchase = await request(`/api/purchase/${purchaseId}/receive`, {
+    method: 'POST',
+    token: warehouseToken,
+  });
+  check(receivePurchase.payload.code === 200, '仓管确认采购收货', receivePurchase.payload);
+
+  const doubleReceive = await request(`/api/purchase/${purchaseId}/receive`, {
+    method: 'POST',
+    token: warehouseToken,
+  });
+  check(doubleReceive.payload.code === 400, '采购单不能重复收货', doubleReceive.payload);
+
+  const purchaseProduct1After = await request('/api/product/1', { token });
+  const purchaseProduct2After = await request('/api/product/2', { token });
+  check(
+    Number(purchaseProduct1After.payload.data.stockNum) === p1StockBefore + 4 &&
+      Number(purchaseProduct2After.payload.data.stockNum) === p2StockBefore + 3,
+    '采购收货后库存正确增加',
+    {
+      product1: { before: p1StockBefore, after: purchaseProduct1After.payload.data.stockNum },
+      product2: { before: p2StockBefore, after: purchaseProduct2After.payload.data.stockNum },
+    }
+  );
+  check(
+    Number(purchaseProduct1After.payload.data.costPrice) === p1ExpectedCost,
+    '采购收货按移动加权平均更新成本',
+    { expected: p1ExpectedCost, actual: purchaseProduct1After.payload.data.costPrice }
+  );
+
+  const purchaseLogs = await request('/api/stock/log/list?pageNum=1&pageSize=100', { token });
+  const purchaseInboundLogs = purchaseLogs.payload.data.list.filter(
+    (row) => row.bizType === 1 && String(row.remark).includes(purchaseNo)
+  );
+  check(
+    purchaseInboundLogs.length === 2 &&
+      purchaseInboundLogs.every((row) => row.bizTypeName === '采购入库'),
+    '采购收货写入采购入库流水',
+    purchaseLogs.payload
+  );
+
+  const purchaseDetailAfterReceive = await request(`/api/purchase/${purchaseId}`, { token });
+  check(
+    purchaseDetailAfterReceive.payload.code === 200 &&
+      purchaseDetailAfterReceive.payload.data.status === 2 &&
+      purchaseDetailAfterReceive.payload.data.receiver === '王仓管' &&
+      Number(purchaseDetailAfterReceive.payload.data.payableAmount) === purchaseTotal &&
+      Number(purchaseDetailAfterReceive.payload.data.paidAmount) === 0 &&
+      Number(purchaseDetailAfterReceive.payload.data.items[0].price) === 2.5,
+    '采购收货后状态与应付正确',
+    purchaseDetailAfterReceive.payload
+  );
+
+  const warehousePurchaseDetail = await request(`/api/purchase/${purchaseId}`, {
+    token: warehouseToken,
+  });
+  check(
+    warehousePurchaseDetail.payload.code === 200 &&
+      warehousePurchaseDetail.payload.data.totalAmount === undefined &&
+      warehousePurchaseDetail.payload.data.payableAmount === undefined &&
+      warehousePurchaseDetail.payload.data.payStatus === undefined &&
+      warehousePurchaseDetail.payload.data.items.every(
+        (item) => item.price === undefined && item.amount === undefined && item.quantity > 0
+      ),
+    '仓管看不到采购金额，只能看到数量',
+    warehousePurchaseDetail.payload
+  );
+
+  const partialPay = await request(`/api/purchase/${purchaseId}/pay`, {
+    method: 'POST',
+    token,
+    body: { amount: 5 },
+  });
+  check(
+    partialPay.payload.code === 200 &&
+      partialPay.payload.data.paidAmount === 5 &&
+      partialPay.payload.data.unpaidAmount === purchaseTotal - 5,
+    '管理员登记部分付款',
+    partialPay.payload
+  );
+
+  const overPay = await request(`/api/purchase/${purchaseId}/pay`, {
+    method: 'POST',
+    token,
+    body: { amount: purchaseTotal },
+  });
+  check(overPay.payload.code === 400, '付款金额不能超过未付金额', overPay.payload);
+
+  const restPay = await request(`/api/purchase/${purchaseId}/pay`, {
+    method: 'POST',
+    token,
+    body: { amount: purchaseTotal - 5 },
+  });
+  check(restPay.payload.code === 200 && restPay.payload.data.unpaidAmount === 0, '付清采购单', restPay.payload);
+
+  const payAgain = await request(`/api/purchase/${purchaseId}/pay`, {
+    method: 'POST',
+    token,
+    body: { amount: 1 },
+  });
+  check(payAgain.payload.code === 400, '已付清的采购单不能重复付款', payAgain.payload);
+
+  const purchaseDetailPaid = await request(`/api/purchase/${purchaseId}`, { token });
+  check(
+    purchaseDetailPaid.payload.data.payStatus === 2 &&
+      Number(purchaseDetailPaid.payload.data.paidAmount) === purchaseTotal,
+    '采购单付款状态已付清',
+    purchaseDetailPaid.payload
+  );
+
+  const purchaseOpLogs = await request(
+    '/api/operation-log/list?pageNum=1&pageSize=100&module=purchase&action=receive',
+    { token }
+  );
+  check(
+    purchaseOpLogs.payload.code === 200 &&
+      purchaseOpLogs.payload.data.list.some((row) => row.bizNo === purchaseNo),
+    '操作日志记录采购收货',
+    purchaseOpLogs.payload
+  );
+
+  const accountantPurchase = await request('/api/purchase/list?pageNum=1&pageSize=10', {
+    token: accountantToken,
+  });
+  const cashierPurchase = await request('/api/purchase/list?pageNum=1&pageSize=10', {
+    token: operatorToken,
+  });
+  check(
+    accountantPurchase.payload.code === 403 && cashierPurchase.payload.code === 403,
+    '会计和收银员不能访问采购模块',
+    { accountant: accountantPurchase.payload, cashier: cashierPurchase.payload }
+  );
+
+  const cancelDraft = await request('/api/purchase', {
+    method: 'POST',
+    token: purchaserToken,
+    body: { supplierId: 2, items: [{ productId: 3, quantity: 1, price: 1 }] },
+  });
+  const cancelId = cancelDraft.payload.data.id;
+  const submitCancel = await request(`/api/purchase/${cancelId}/submit`, {
+    method: 'POST',
+    token: purchaserToken,
+  });
+  check(
+    cancelDraft.payload.code === 200 && submitCancel.payload.code === 200,
+    '创建并提交待取消采购单',
+    { create: cancelDraft.payload, submit: submitCancel.payload }
+  );
+  const cancelPurchase = await request(`/api/purchase/${cancelId}/cancel`, {
+    method: 'POST',
+    token: purchaserToken,
+  });
+  check(cancelPurchase.payload.code === 200, '采购可取消已提交单据', cancelPurchase.payload);
+  const receiveCancelled = await request(`/api/purchase/${cancelId}/receive`, {
+    method: 'POST',
+    token: warehouseToken,
+  });
+  check(receiveCancelled.payload.code === 400, '已取消采购单不能收货', receiveCancelled.payload);
 
   /* ---------- 盘点闭环：仓管制单/提交，管理员审核 ---------- */
   const createTake = await request('/api/stocktake', {

@@ -6,6 +6,7 @@
  * - category:read / category:write
  * - supplier:read / supplier:write
  * - stock:read / stock:in / stock:out
+ * - purchase:read / purchase:create / purchase:receive
  * - stocktake:read / stocktake:create / stocktake:audit
  * - sale:read / sale:read:all / sale:create / sale:return / sale:stats
  * - dashboard:read
@@ -24,6 +25,7 @@ const POSITION_PERMISSIONS = {
     'dashboard:read',
     'product:read', 'category:read', 'supplier:read',
     'stock:read', 'stock:in', 'stock:out',
+    'purchase:read', 'purchase:receive',
     'stocktake:read', 'stocktake:create',
   ],
 
@@ -34,11 +36,12 @@ const POSITION_PERMISSIONS = {
     'sale:read', 'sale:create',
   ],
 
-  // 采购：可以收货入库，不能出库、不能销售
+  // 采购：制单、提交、取消自己的采购单；收货由仓管执行
   采购: [
     'dashboard:read',
     'product:read', 'category:read', 'supplier:read',
-    'stock:read', 'stock:in',
+    'stock:read',
+    'purchase:read', 'purchase:create',
   ],
 
   // 后勤：库存只读，不能操作单据

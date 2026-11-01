@@ -120,6 +120,12 @@ export const constantRoutes = [
         ],
       },
       {
+        path: 'purchase',
+        name: 'Purchase',
+        component: () => import('@/views/purchase/PurchasePage.vue'),
+        meta: { title: '采购管理', icon: 'ShoppingTrolley', permissions: ['purchase:read'] },
+      },
+      {
         path: 'supplier',
         name: 'Supplier',
         component: () => import('@/views/supplier/SupplierPage.vue'),

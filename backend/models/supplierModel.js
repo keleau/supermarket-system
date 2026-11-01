@@ -70,8 +70,13 @@ async function existsName(name, excludeId = null) {
 
 /** 是否被商品引用 */
 async function isReferenced(id) {
-  const rows = await query('SELECT id FROM product WHERE supplier_id = ? LIMIT 1', [id]);
-  return rows.length > 0;
+  const rows = await query(
+    `SELECT
+       (SELECT COUNT(*) FROM product WHERE supplier_id = ?) +
+       (SELECT COUNT(*) FROM purchase_order WHERE supplier_id = ?) AS cnt`,
+    [id, id]
+  );
+  return rows[0].cnt > 0;
 }
 
 /** 新增 */

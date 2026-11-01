@@ -74,6 +74,29 @@ function maskStocktakeFinance(data, user) {
   return order;
 }
 
+/**
+ * 采购单：采购金额与付款数据只对管理员和采购岗位开放。
+ * 仓管可以查看/收货，但只需要数量，不应看到采购价与应付金额。
+ */
+function canSeePurchaseAmounts(user) {
+  return !!user && (user.role === 'admin' || user.position === '采购');
+}
+
+function maskPurchaseFinance(data, user) {
+  if (canSeePurchaseAmounts(user) || !data) return data;
+
+  const orderFields = ['totalAmount', 'payableAmount', 'paidAmount', 'payStatus'];
+  if (Array.isArray(data)) {
+    return data.map((row) => omitFields(row, orderFields));
+  }
+
+  const order = omitFields(data, orderFields);
+  if (Array.isArray(order.items)) {
+    order.items = order.items.map((item) => omitFields(item, ['price', 'amount']));
+  }
+  return order;
+}
+
 module.exports = {
   isAdmin,
   maskProductCost,
@@ -82,4 +105,6 @@ module.exports = {
   maskStockStatistics,
   maskStockLogPrice,
   maskStocktakeFinance,
+  canSeePurchaseAmounts,
+  maskPurchaseFinance,
 };

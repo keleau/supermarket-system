@@ -1,7 +1,7 @@
 /**
  * 连续点击式 E2E 测试
  *
- * 独立环境：临时 MySQL 库 + 后端 3100 + 前端预览 4173
+ * 独立环境：临时 MySQL 库 + 后端 3210 + 前端预览 4173
  * 不碰本地 5173 / 3000，也不会污染演示数据。
  *
  * 覆盖主链路：
@@ -24,7 +24,7 @@ const BACKEND_DIR = path.resolve(FRONTEND_DIR, '..', 'backend')
 const RESULTS_DIR = path.join(FRONTEND_DIR, 'test-results')
 
 const PREVIEW_PORT = 4173
-const API_PORT = 3100
+const API_PORT = 3210
 const BASE = `http://127.0.0.1:${PREVIEW_PORT}`
 const API = `http://127.0.0.1:${API_PORT}`
 const TMP_DB = `supermarket_e2e_${Date.now()}`
@@ -284,6 +284,55 @@ async function stocktakeFlow() {
   await page.getByText('已审核').first().waitFor({ timeout: 10000 })
 }
 
+async function purchaseFlow() {
+  await page.goto(`${BASE}/purchase`)
+  const createBtn = page.getByRole('button', { name: '新建采购单' })
+  await createBtn.waitFor({ timeout: 10000 })
+  await createBtn.click()
+
+  const dialog = page.locator('.el-dialog:visible').last()
+  await dialog.waitFor()
+  await dialog.getByRole('combobox').first().click()
+  await page.getByRole('option', { name: /农夫山泉股份有限公司/ }).click()
+
+  await dialog.getByRole('combobox').nth(1).click()
+  await page.getByRole('option', { name: /农夫山泉 550ml/ }).click()
+
+  const nums = dialog.locator('input[role="spinbutton"]')
+  await nums.nth(0).fill('5')
+  await nums.nth(1).fill('2.5')
+  await dialog.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await page.getByText(/已创建/).waitFor({ timeout: 10000 })
+
+  const firstRow = () => page.locator('.el-table__row').first()
+  await firstRow().waitFor({ timeout: 10000 })
+  await firstRow().getByText('草稿', { exact: true }).waitFor({ timeout: 10000 })
+
+  await firstRow().getByRole('button', { name: '提交', exact: true }).click()
+  await confirmBox('提交')
+  await page.getByText('采购单已提交').waitFor({ timeout: 10000 })
+  await firstRow().getByText('已提交', { exact: true }).waitFor({ timeout: 10000 })
+
+  await firstRow().getByRole('button', { name: '收货', exact: true }).click()
+  await confirmBox('确认收货')
+  await page.getByText(/收货成功/).waitFor({ timeout: 10000 })
+  await firstRow().getByText('已入库', { exact: true }).waitFor({ timeout: 10000 })
+
+  await firstRow().getByRole('button', { name: '付款', exact: true }).click()
+  const payDialog = page.locator('.el-dialog:visible').last()
+  await payDialog.waitFor()
+  await payDialog.getByRole('button', { name: '确认付款', exact: true }).click()
+  await page.getByText('付款已登记').waitFor({ timeout: 10000 })
+  await firstRow().getByText('已付清', { exact: true }).waitFor({ timeout: 10000 })
+
+  await firstRow().getByRole('button', { name: '查看', exact: true }).click()
+  const drawer = page.locator('.el-drawer:visible').last()
+  await drawer.waitFor({ timeout: 10000 })
+  await drawer.getByText('采购金额').waitFor({ timeout: 10000 })
+  await drawer.getByText('已付清').waitFor({ timeout: 10000 })
+  await drawer.getByRole('button', { name: '关闭', exact: true }).click()
+}
+
 async function checkOperationLog() {
   await page.goto(`${BASE}/system/log`)
   await page.getByRole('heading', { name: '操作日志' }).waitFor({ timeout: 10000 })
@@ -305,6 +354,7 @@ async function checkCashier() {
   await expandMenu()
 
   assert.equal(await menuCount('库存管理'), 0, '收银员不应看到库存管理')
+  assert.equal(await menuCount('采购管理'), 0, '收银员不应看到采购管理')
   assert.equal(await ensureSubmenu('销售管理'), true, '收银员应看到销售管理')
   assert.equal(await menuCount('收银开单'), 1, '收银员应看到收银开单')
   assert.equal(await menuCount('销售统计'), 0, '收银员不应看到销售统计')
@@ -346,6 +396,7 @@ async function checkWarehouse() {
   await expandMenu()
 
   assert.equal(await menuCount('销售管理'), 0, '仓管不应看到销售管理')
+  assert.equal(await menuCount('采购管理'), 1, '仓管应看到采购管理（只收货）')
   assert.equal(await ensureSubmenu('库存管理'), true, '仓管应看到库存管理')
   assert.equal(await menuCount('库存盘点'), 1, '仓管应看到库存盘点')
 
@@ -361,6 +412,7 @@ async function checkAccountant() {
   assert.equal(await ensureSubmenu('销售管理'), true, '会计应看到销售管理')
   assert.equal(await menuCount('销售记录'), 1, '会计应看到销售记录')
   assert.equal(await menuCount('收银开单'), 0, '会计不应看到收银开单')
+  assert.equal(await menuCount('采购管理'), 0, '会计不应看到采购管理')
   assert.equal(await ensureSubmenu('库存管理'), true, '会计应看到库存管理')
   assert.equal(await menuCount('库存盘点'), 1, '会计应看到库存盘点')
 
@@ -436,6 +488,7 @@ async function main() {
     await step('入库/出库切换 + 列表重载', switchInboundOutbound)
     await step('销售开单 + 退款退货', checkoutAndReturn)
     await step('库存盘点：生成/保存/提交/审核', stocktakeFlow)
+    await step('采购：制单/提交/收货/付款', purchaseFlow)
     await step('操作日志记录盘点审核', checkOperationLog)
     await step('积压商品 + 供应商进货排行', checkStockAnalysis)
     await step('收银员权限与本人销售单', checkCashier)

@@ -77,7 +77,7 @@ async function remove(req, res) {
 
   const exist = await supplierModel.findById(id);
   assert(exist, '供应商不存在');
-  assert(!(await supplierModel.isReferenced(id)), '该供应商下存在关联商品，无法删除');
+  assert(!(await supplierModel.isReferenced(id)), '该供应商下存在关联商品或采购单，无法删除');
 
   await supplierModel.remove(id);
   return ok(res, null);

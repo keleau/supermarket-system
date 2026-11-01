@@ -40,11 +40,28 @@ test('收银员可以销售开单，不能入库/出库，也不能看全部单�
   assert.equal(hasPermission(cashier, 'stock:read'), false);
 });
 
-test('采购可以收货入库，不能出库和销售', () => {
+test('采购可以制单，不能直接入库、出库或销售', () => {
   const purchaser = user('采购');
-  assert.equal(hasPermission(purchaser, 'stock:in'), true);
+  assert.equal(hasPermission(purchaser, 'purchase:read'), true);
+  assert.equal(hasPermission(purchaser, 'purchase:create'), true);
+  assert.equal(hasPermission(purchaser, 'purchase:receive'), false);
+  assert.equal(hasPermission(purchaser, 'stock:in'), false);
   assert.equal(hasPermission(purchaser, 'stock:out'), false);
   assert.equal(hasPermission(purchaser, 'sale:create'), false);
+});
+
+test('仓管可以确认采购收货，不能制单', () => {
+  const warehouse = user('仓管');
+  assert.equal(hasPermission(warehouse, 'purchase:read'), true);
+  assert.equal(hasPermission(warehouse, 'purchase:receive'), true);
+  assert.equal(hasPermission(warehouse, 'purchase:create'), false);
+});
+
+test('会计和收银员不能访问采购模块', () => {
+  const accountant = user('会计');
+  const cashier = user('收银员');
+  assert.equal(hasPermission(accountant, 'purchase:read'), false);
+  assert.equal(hasPermission(cashier, 'purchase:read'), false);
 });
 
 test('后勤只能看库存，不能操作单据', () => {

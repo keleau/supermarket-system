@@ -75,23 +75,25 @@ Authorization: Bearer <token>
 
 **岗位权限矩阵：**
 
-| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 库存盘点 | 商品/分类/供应商 | 用户管理 |
-|------|----------|------------|----------|------|------|----------|----------|------------------|----------|
-| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 制单+审核 | 读写 | 是 |
-| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 制单 | 只读 | 否 |
-| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 否 | 只读 | 否 |
-| 采购   | 否 | 否 | 否 | 是 | 否 | 是 | 否 | 只读 | 否 |
-| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 只读 | 否 |
-| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 只读 | 否 |
+| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 库存盘点 | 采购管理 | 商品/分类/供应商 | 用户管理 |
+|------|----------|------------|----------|------|------|----------|----------|----------|------------------|----------|
+| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 制单+审核 | 制单+收货+付款 | 读写 | 是 |
+| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 制单 | 查看+收货 | 只读 | 否 |
+| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 否 | 否 | 只读 | 否 |
+| 采购   | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 制单+查看 | 只读 | 否 |
+| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 否 | 只读 | 否 |
+| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 否 | 只读 | 否 |
 
 > 管理员（`role = admin` 或 `position = 管理员`）拥有全部权限（`*`）。
 > 登录 / 获取用户信息接口返回 `permissions` 权限码数组，前端用它控制菜单、路由和按钮；后端接口按同一矩阵再校验一次。
 > 收银员的「销售单查看」只限本人；会计/管理员可看全部。
+> 采购只能编辑/提交/取消**自己创建的**采购单；收货由仓管或管理员执行；登记付款仅管理员。
 > 操作日志仅管理员可查。
 
 **财务字段脱敏：**
 
 - 非管理员响应会剔除商品 `costPrice`、销售明细 `costPrice`、仪表盘利润字段、库存统计 `totalStockValue`、出入库流水 `inboundPrice`、盘点 `costPrice/diffAmount/totalGainAmount/totalLossAmount`。
+- 采购金额（`totalAmount/payableAmount/paidAmount/payStatus` 与明细 `price/amount`）只对管理员和采购岗位返回；仓管可以查看/收货，但看不到金额。
 - `/api/sale/statistics` 仅管理员可访问，其他角色返回 `code=403`；供应商进货金额排行也仅管理员可访问。
 
 ### 2.5 字段命名
@@ -326,6 +328,44 @@ CREATE TABLE `operation_log` (
   KEY `idx_username` (`username`),
   KEY `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
+
+-- ==================== 采购单 ====================
+CREATE TABLE `purchase_order` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `order_no`       VARCHAR(30)   NOT NULL COMMENT '采购单号',
+  `supplier_id`    BIGINT UNSIGNED NOT NULL COMMENT '供应商 id',
+  `supplier_name`  VARCHAR(40)   NOT NULL DEFAULT '' COMMENT '供应商名称快照',
+  `status`         TINYINT       NOT NULL DEFAULT 0 COMMENT '0 草稿 / 1 已提交 / 2 已入库 / 3 已取消',
+  `total_amount`   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '采购总金额',
+  `payable_amount` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '应付金额（入库后生成）',
+  `paid_amount`    DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '已付金额',
+  `operator`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '制单人',
+  `submit_time`    DATETIME      NULL COMMENT '提交时间',
+  `receiver`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '收货人',
+  `receive_time`   DATETIME      NULL COMMENT '收货时间',
+  `remark`         VARCHAR(200)  NOT NULL DEFAULT '',
+  `create_time`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_supplier` (`supplier_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购单';
+
+-- ==================== 采购明细 ====================
+CREATE TABLE `purchase_item` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `order_id`     BIGINT UNSIGNED NOT NULL COMMENT '采购单 id',
+  `product_id`   BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
+  `product_name` VARCHAR(50)   NOT NULL DEFAULT '' COMMENT '商品名称快照',
+  `unit`         VARCHAR(6)    NOT NULL DEFAULT '个' COMMENT '单位快照',
+  `quantity`     INT           NOT NULL COMMENT '采购数量',
+  `price`        DECIMAL(10,2) NOT NULL COMMENT '采购单价',
+  `amount`       DECIMAL(12,2) NOT NULL COMMENT '小计金额',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_product` (`order_id`, `product_id`),
+  KEY `idx_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购明细';
 ```
 
 ### 3.2 字段 → 接口映射
@@ -1184,7 +1224,9 @@ CREATE TABLE `operation_log` (
 | 名称 | 提交入库 |
 | URL | `/api/stock/inbound` |
 | Method | POST |
-| 访问权限 | admin / 仓管 / 采购（需 stock:in） |
+| 访问权限 | admin / 仓管（需 stock:in） |
+
+> 手工入库仅管理员/仓管可用；采购岗位通过「采购单确认收货」入库（见 4.11.6），不直接调用本接口。
 
 **请求参数（body）：**
 
@@ -1981,8 +2023,8 @@ CREATE TABLE `operation_log` (
 |------|------|------|------|
 | GET | `/api/operation-log/list` | admin | 分页查询，支持 module/action/username/startTime/endTime |
 
-- 模块：`product` / `stock` / `sale` / `stocktake`
-- 动作：`create` / `update` / `delete` / `inbound` / `outbound` / `return` / `void` / `submit` / `audit` / `cancel`
+- 模块：`product` / `stock` / `sale` / `stocktake` / `purchase`
+- 动作：`create` / `update` / `delete` / `inbound` / `outbound` / `return` / `void` / `submit` / `audit` / `receive` / `pay` / `cancel`
 - 日志只读，不提供修改和删除接口。
 
 ### 4.10 经营分析扩展
@@ -1993,6 +2035,76 @@ CREATE TABLE `operation_log` (
 | GET | `/api/dashboard/supplier-ranking?days=30&limit=10` | admin | 近 N 天供应商采购入库金额排行（只统计 `biz_type=1`） |
 
 > 供应商进货金额属于成本数据，仅管理员可看；积压商品只涉及数量，仓管/采购/后勤/会计可看。
+
+### 4.11 采购管理模块
+
+状态流转：`0 草稿 → 1 已提交 → 2 已入库 / 3 已取消`。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET  | `/api/purchase/list` | purchase:read | 采购单分页，支持 orderNo/status/supplierId/startTime/endTime |
+| GET  | `/api/purchase/:id` | purchase:read | 详情（含明细） |
+| POST | `/api/purchase` | purchase:create | 新建草稿 `{ supplierId, items: [{ productId, quantity, price }], remark? }` |
+| PUT  | `/api/purchase/:id` | purchase:create | 编辑草稿（仅本人或管理员） |
+| POST | `/api/purchase/:id/submit` | purchase:create | 提交（仅本人或管理员） |
+| POST | `/api/purchase/:id/cancel` | purchase:create | 取消草稿/已提交（仅本人或管理员） |
+| POST | `/api/purchase/:id/receive` | purchase:receive | 确认收货入库（仓管/管理员） |
+| POST | `/api/purchase/:id/pay` | admin | 登记付款 `{ amount }` |
+
+**采购单字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id / orderNo | number / string | 采购单 id 与单号（`CGYYYYMMDD-NNN`） |
+| supplierId / supplierName | number / string | 供应商 id 与名称快照 |
+| status | number | 0 草稿 / 1 已提交 / 2 已入库 / 3 已取消 |
+| totalAmount | number | 采购总金额（明细小计汇总） |
+| payableAmount | number | 应付金额；收货入库时写入，等于 totalAmount |
+| paidAmount | number | 已付金额；管理员登记付款时累加 |
+| payStatus | number | 0 未付款 / 1 部分付款 / 2 已付清（由应付与已付计算） |
+| operator / receiver | string | 制单人 / 收货人 |
+| submitTime / receiveTime / createTime | string | 时间字段 |
+| items | array | 明细：`productId / productName / unit / quantity / price / amount` |
+
+**业务规则：**
+
+1. 只有草稿可以编辑/提交；草稿和已提交可以取消；已入库和已取消为终态。
+2. 采购只能操作自己创建的采购单（编辑/提交/取消），管理员不受此限制；收货由仓管/管理员执行。
+3. 确认收货在事务内完成：锁定采购单 → 逐个锁定商品 → 增加库存 → 按采购单价更新移动加权成本 → 写 `biz_type=1` 采购入库流水（备注 `采购入库 单号`）→ 采购单置为已入库并生成应付。重复收货返回 400。
+4. 同一商品在一张采购单中不能重复；数量必须为正整数，单价不能为负；单张最多 100 条明细。
+5. 付款仅针对已入库采购单，金额必须大于 0 且不超过未付金额；不做独立付款流水表，付款记录体现在采购单的 `paidAmount` 与操作日志中。
+6. 单号 `CGYYYYMMDD-NNN` 由当日最大序号生成，唯一键冲突时自动重试。
+7. 采购金额与付款字段只对管理员和采购岗位返回；仓管可查看/收货，但接口会剔除金额字段（`totalAmount/payableAmount/paidAmount/payStatus/price/amount`）。
+
+**详情返回示例（节选）：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "id": 1,
+    "orderNo": "CG20261101-001",
+    "supplierId": 1,
+    "supplierName": "农夫山泉股份有限公司",
+    "status": 2,
+    "totalAmount": 19,
+    "payableAmount": 19,
+    "paidAmount": 19,
+    "payStatus": 2,
+    "operator": "赵采购",
+    "receiver": "王仓管",
+    "submitTime": "2026-11-01 10:00:00",
+    "receiveTime": "2026-11-01 10:05:00",
+    "createTime": "2026-11-01 09:55:00",
+    "remark": "周末补货",
+    "items": [
+      { "id": 1, "productId": 1, "productName": "农夫山泉 550ml", "unit": "瓶", "quantity": 4, "price": 2.5, "amount": 10 },
+      { "id": 2, "productId": 2, "productName": "伊利纯牛奶 250ml", "unit": "盒", "quantity": 3, "price": 3, "amount": 9 }
+    ]
+  }
+}
+```
 
 ---
 
