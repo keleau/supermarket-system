@@ -9,10 +9,13 @@ const {
   maskStockStatistics,
   maskStockLogPrice,
   maskStocktakeFinance,
+  maskPurchaseFinance,
 } = require('../utils/finance');
 
 const admin = { role: 'admin' };
 const operator = { role: 'operator' };
+const purchaser = { role: 'operator', position: '采购' };
+const warehouse = { role: 'operator', position: '仓管' };
 
 test('只有 admin 角色算管理员', () => {
   assert.equal(isAdmin(admin), true);
@@ -144,4 +147,46 @@ test('操作员盘点单不返回成本与盈亏金额，但保留数量', () =>
 test('管理员盘点单保留成本与盈亏金额', () => {
   const order = { id: 1, totalGainAmount: 12, items: [{ costPrice: 6 }] };
   assert.equal(maskStocktakeFinance(order, admin), order);
+});
+
+test('管理员和采购保留采购金额', () => {
+  const order = { id: 1, totalAmount: 19, items: [{ price: 2.5, amount: 10 }] };
+  assert.equal(maskPurchaseFinance(order, admin), order);
+  assert.equal(maskPurchaseFinance(order, purchaser), order);
+});
+
+test('仓管看采购单不返回金额，但保留数量', () => {
+  const order = {
+    id: 1,
+    totalAmount: 19,
+    payableAmount: 19,
+    paidAmount: 5,
+    payStatus: 1,
+    items: [{ productId: 1, productName: '农夫山泉 550ml', quantity: 4, price: 2.5, amount: 10 }],
+  };
+  const masked = maskPurchaseFinance(order, warehouse);
+
+  assert.equal(masked.totalAmount, undefined);
+  assert.equal(masked.payableAmount, undefined);
+  assert.equal(masked.paidAmount, undefined);
+  assert.equal(masked.payStatus, undefined);
+  assert.equal(masked.items[0].price, undefined);
+  assert.equal(masked.items[0].amount, undefined);
+  assert.equal(masked.items[0].quantity, 4);
+  assert.equal(masked.items[0].productName, '农夫山泉 550ml');
+  assert.equal(order.totalAmount, 19);
+  assert.equal(order.items[0].price, 2.5);
+});
+
+test('仓管看采购列表逐行剔除金额', () => {
+  const rows = [
+    { id: 1, totalAmount: 19, payableAmount: 19, paidAmount: 0, payStatus: 0 },
+    { id: 2, totalAmount: 8, payableAmount: 0, paidAmount: 0, payStatus: 0 },
+  ];
+  const masked = maskPurchaseFinance(rows, warehouse);
+
+  assert.equal(masked.length, 2);
+  assert.equal(masked[0].totalAmount, undefined);
+  assert.equal(masked[1].totalAmount, undefined);
+  assert.equal(rows[0].totalAmount, 19);
 });

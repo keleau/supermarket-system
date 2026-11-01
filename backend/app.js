@@ -7,6 +7,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const config = require('./config');
 const routes = require('./routers');
@@ -50,6 +51,27 @@ app.get('/api/health', async (req, res) => {
 
 /* ---------------- 业务路由 ---------------- */
 app.use('/api', routes);
+
+/* ---------------- 前端静态资源（演示/生产单端口模式） ---------------- */
+// 开发/E2E 不开启；演示包通过 SERVE_FRONTEND=1 让后端同时托管 Vue 构建产物。
+const serveFrontend = process.env.SERVE_FRONTEND === '1';
+if (serveFrontend) {
+  const frontendDist = process.env.FRONTEND_DIST
+    ? path.resolve(__dirname, process.env.FRONTEND_DIST)
+    : path.join(__dirname, '..', 'frontend', 'dist');
+  const indexFile = path.join(frontendDist, 'index.html');
+
+  if (fs.existsSync(indexFile)) {
+    app.use(express.static(frontendDist, { index: false }));
+    // history 模式路由回退：非 /api 的 GET 全部交给 Vue Router
+    app.get(/.*/, (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
+      return res.sendFile(indexFile);
+    });
+  } else {
+    console.warn(`[frontend] SERVE_FRONTEND=1，但未找到前端构建产物：${indexFile}`);
+  }
+}
 
 /* ---------------- 兜底处理 ---------------- */
 app.use(notFound);

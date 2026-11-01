@@ -6,8 +6,10 @@
  * - category:read / category:write
  * - supplier:read / supplier:write
  * - stock:read / stock:in / stock:out
+ * - purchase:read / purchase:create / purchase:receive
  * - stocktake:read / stocktake:create / stocktake:audit
- * - sale:read / sale:read:all / sale:create / sale:return / sale:stats
+ * - sale:read / sale:read:all / sale:create / sale:return:create / sale:stats
+ *   （退货单确认 / 拒绝为管理员专属，由 requireAdmin 控制）
  * - dashboard:read
  * - user:manage
  *
@@ -24,21 +26,23 @@ const POSITION_PERMISSIONS = {
     'dashboard:read',
     'product:read', 'category:read', 'supplier:read',
     'stock:read', 'stock:in', 'stock:out',
+    'purchase:read', 'purchase:receive',
     'stocktake:read', 'stocktake:create',
   ],
 
-  // 收银员：只能销售开单 + 查看自己的销售单
+  // 收银员：销售开单 + 发起退货申请 + 查看自己的销售单 / 退货单
   收银员: [
     'dashboard:read',
     'product:read', 'category:read', 'supplier:read',
-    'sale:read', 'sale:create',
+    'sale:read', 'sale:create', 'sale:return:create',
   ],
 
-  // 采购：可以收货入库，不能出库、不能销售
+  // 采购：制单、提交、取消自己的采购单；收货由仓管执行
   采购: [
     'dashboard:read',
     'product:read', 'category:read', 'supplier:read',
-    'stock:read', 'stock:in',
+    'stock:read',
+    'purchase:read', 'purchase:create',
   ],
 
   // 后勤：库存只读，不能操作单据

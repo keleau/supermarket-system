@@ -2,10 +2,11 @@
 /**
  * 销售记录页（销售管理）
  * 结构：筛选卡片 → 4 个统计小卡片 → 单据表格（服务端分页）→ 单据明细弹窗
- * 权限：管理员可见导出与退货/作废按钮；其他职位只读
+ * 权限：管理员可见导出与作废按钮；收银员可对本人销售单发起退货申请，退货确认由管理员在「退货单」页完成
  * 业务：
  * - 历史流水不可删除，页面无删除按钮
- * - 退货（整单，回补库存）与作废（仅改状态，不动库存）仅管理员可用
+ * - 退货为独立整单退货单：申请不动库存，管理员确认后回补库存并冲减营收
+ * - 作废仅管理员可用，作废后回补库存并把该单待确认的退货申请一并取消
  * - 统计口径只认 status = 1 的正常单据，因此记录条数与销售统计的订单数对不上是正常的
  */
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -14,9 +15,9 @@ import { useUserStore } from '@/store/user'
 import {
   getSaleRecordDetail,
   getSaleRecordList,
-  returnSaleRecord,
   voidSaleRecord,
 } from '@/api/modules/sale'
+import { createSaleReturn } from '@/api/modules/saleReturn'
 import { downloadCsv } from '@/utils/csv.js'
 import { formatInt, money } from '@/utils/format.js'
 
@@ -24,6 +25,8 @@ const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
 /** 管理员 / 会计可查看全部收银员的单据；收银员只能看自己的 */
 const canReadAll = computed(() => userStore.can('sale:read:all'))
+/** 管理员 / 收银员可以发起整单退货申请 */
+const canApplyReturn = computed(() => userStore.can('sale:return:create'))
 
 /** 支付方式（1 现金 2 微信 3 支付宝 4 银行卡） */
 const PAY_TYPES = {
@@ -198,40 +201,39 @@ function exportDetail(record) {
   ElMessage.success(`单据 ${record.saleNo} 已导出`)
 }
 
-/* ---------------- 退货 / 作废 ---------------- */
+/* ---------------- 退货申请 / 作废 ---------------- */
 
-/** 退款退货：整单退回（后端回补库存并置为已退货） */
-async function handleReturn(row) {
+/** 发起整单退货申请：只生成待确认退货单，不动库存；管理员确认后才回补库存 */
+async function handleApplyReturn(row) {
   if (row.status !== 1) return
   try {
     await ElMessageBox.confirm(
-      `确认对单据「${row.saleNo}」整单退款退货吗？\n操作后该单商品库存将自动回补。`,
-      '退款退货确认',
+      `确认对单据「${row.saleNo}」发起整单退货申请吗？\n提交后需管理员在「退货单」页确认，确认后才会回补库存并冲减营收。`,
+      '发起退货申请',
       {
         type: 'warning',
-        confirmButtonText: '确认退货',
+        confirmButtonText: '提交申请',
         cancelButtonText: '取消',
-        confirmButtonClass: 'el-button--danger',
       },
     )
   } catch {
     return
   }
   try {
-    await returnSaleRecord(row.saleNo)
-    ElMessage.success(`单据 ${row.saleNo} 已退款退货，库存已回补`)
+    const result = await createSaleReturn({ saleNo: row.saleNo })
+    ElMessage.success(`退货单 ${result.returnNo} 已提交，等待管理员确认`)
     await reloadAfterWrite()
   } catch {
-    /* 失败文案（如「该单据已退货」）由 request 拦截器统一弹出 */
+    /* 失败文案（如「该单据已有待确认的退货单」）由 request 拦截器统一弹出 */
   }
 }
 
-/** 作废单据：仅作废（不恢复库存），用于误录冲正 */
+/** 作废单据：回补库存，并取消该单待确认的退货申请 */
 async function handleVoid(row) {
   if (row.status !== 1) return
   try {
     await ElMessageBox.confirm(
-      `确认作废单据「${row.saleNo}」吗？\n作废后该单不计入销售统计，且不恢复库存。`,
+      `确认作废单据「${row.saleNo}」吗？\n作废后该单不计入销售统计，库存会回补，待确认的退货申请会一并取消。`,
       '作废确认',
       {
         type: 'warning',
@@ -245,7 +247,7 @@ async function handleVoid(row) {
   }
   try {
     await voidSaleRecord(row.saleNo)
-    ElMessage.success(`单据 ${row.saleNo} 已作废`)
+    ElMessage.success(`单据 ${row.saleNo} 已作废，库存已回补`)
     await reloadAfterWrite()
   } catch {
     /* 失败文案由 request 拦截器统一弹出 */
@@ -338,10 +340,19 @@ async function reloadAfterWrite() {
         <el-table-column prop="saleNo" label="单据编号" min-width="175" show-overflow-tooltip />
         <el-table-column prop="createTime" label="销售时间" min-width="150" />
         <el-table-column prop="operator" label="收银员" width="96" />
-        <el-table-column label="状态" width="90" align="center">
+        <el-table-column label="状态" width="150" align="center">
           <template #default="{ row }">
             <el-tag :type="statusMeta(row.status).tag" effect="light" round size="small">
               {{ statusMeta(row.status).label }}
+            </el-tag>
+            <el-tag
+              v-if="row.activeReturnStatus === 0"
+              type="warning"
+              effect="plain"
+              size="small"
+              class="return-pending"
+            >
+              退货待确认
             </el-tag>
           </template>
         </el-table-column>
@@ -360,14 +371,21 @@ async function reloadAfterWrite() {
             <span class="num amount">¥{{ money(row.totalAmount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="240">
+        <el-table-column label="操作" fixed="right" width="290">
           <template #default="{ row }">
             <el-button text type="primary" @click="openDetail(row)">查看明细</el-button>
             <el-button v-if="isAdmin" text @click="exportDetail(row)">导出</el-button>
-            <template v-if="isAdmin && row.status === 1">
-              <el-button text type="warning" @click="handleReturn(row)">退款退货</el-button>
-              <el-button text type="info" @click="handleVoid(row)">作废</el-button>
-            </template>
+            <el-button
+              v-if="canApplyReturn && row.status === 1 && row.activeReturnStatus !== 0"
+              text
+              type="warning"
+              @click="handleApplyReturn(row)"
+            >
+              申请退货
+            </el-button>
+            <el-button v-if="isAdmin && row.status === 1" text type="info" @click="handleVoid(row)">
+              作废
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -406,6 +424,15 @@ async function reloadAfterWrite() {
               <el-tag :type="statusMeta(detailRecord.status).tag" effect="light" round size="small">
                 {{ statusMeta(detailRecord.status).label }}
               </el-tag>
+              <el-tag
+                v-if="detailRecord.activeReturnStatus === 0"
+                type="warning"
+                effect="plain"
+                size="small"
+                class="return-pending"
+              >
+                退货待确认
+              </el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="支付方式">{{ payMeta(detailRecord.payType).label }}</el-descriptions-item>
             <el-descriptions-item label="总件数">
@@ -439,10 +466,16 @@ async function reloadAfterWrite() {
       </div>
 
       <template #footer>
-        <template v-if="isAdmin && detailRecord?.status === 1">
-          <el-button type="warning" @click="handleReturn(detailRecord)">退款退货</el-button>
-          <el-button type="info" @click="handleVoid(detailRecord)">作废</el-button>
-        </template>
+        <el-button
+          v-if="canApplyReturn && detailRecord?.status === 1 && detailRecord?.activeReturnStatus !== 0"
+          type="warning"
+          @click="handleApplyReturn(detailRecord)"
+        >
+          申请退货
+        </el-button>
+        <el-button v-if="isAdmin && detailRecord?.status === 1" type="info" @click="handleVoid(detailRecord)">
+          作废
+        </el-button>
         <el-button v-if="isAdmin" @click="exportDetail(detailRecord)">导出本单</el-button>
         <el-button @click="closeDetail">关闭</el-button>
       </template>
@@ -529,6 +562,10 @@ async function reloadAfterWrite() {
 
 .amount {
   font-weight: 600;
+}
+
+.return-pending {
+  margin-left: 4px;
 }
 
 .table-foot {

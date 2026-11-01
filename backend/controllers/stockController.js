@@ -10,7 +10,7 @@ const { BizError, ok, page } = require('../utils/result');
 const {
   toStr, toInt, toNum, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
 } = require('../utils/validate');
-const { movingAverageCost } = require('../utils/cost');
+const { applyInbound } = require('../services/inventoryService');
 const { maskStockLogPrice, maskStockStatistics } = require('../utils/finance');
 const { STOCK_BIZ, STOCK_BIZ_VALUES } = require('../utils/stockBiz');
 const { writeLog } = require('../utils/operationLog');
@@ -84,41 +84,18 @@ async function inbound(req, res) {
       supplierName = supplier.supplierName;
     }
 
-    const beforeNum = product.stock_num;
-    const afterNum = beforeNum + quantity;
     // 该商品第一次入库视为期初入库；之后都按采购入库记录
     const bizType = (await stockModel.hasInbound(conn, productId))
       ? STOCK_BIZ.PURCHASE_IN
       : STOCK_BIZ.OPENING;
 
-    await productModel.changeStock(conn, productId, quantity);
-
-    // 入库价参与移动加权平均；未填价格时维持原均价。
-    // 商品行已加锁，beforeNum / cost_price 与本次入库是同一事务快照。
-    if (inboundPrice !== null) {
-      const nextCostPrice = movingAverageCost({
-        stockNum: beforeNum,
-        currentCost: product.cost_price,
-        inboundQty: quantity,
-        inboundPrice,
-      });
-      await productModel.updateCostPrice(conn, productId, nextCostPrice);
-    }
-
-    // 原为缺货下架的商品，入库后自动上架
-    if (beforeNum <= 0 && product.status === 0) {
-      await productModel.updateStatus(conn, productId, 1);
-    }
-
-    const result = await stockModel.insertLog(conn, {
-      productId,
-      changeType: 1,
-      bizType,
+    // 手工入库和采购收货共用同一套库存/加权成本/流水逻辑
+    const result = await applyInbound(conn, {
+      product,
       quantity,
-      beforeNum,
-      afterNum,
-      supplierName,
       inboundPrice,
+      bizType,
+      supplierName,
       operator,
       remark,
     });
@@ -126,14 +103,14 @@ async function inbound(req, res) {
     await writeLog(conn, req, {
       module: 'stock',
       action: 'inbound',
-      bizNo: result.id,
+      bizNo: result.logId,
       detail: `商品「${product.product_name}」入库 ${quantity}${product.unit || ''}，单价 ${inboundPrice ?? '—'}`,
     });
 
     return result;
   });
 
-  return ok(res, { id: result.id });
+  return ok(res, { id: result.logId });
 }
 
 /* ------------------------------------------------------------------ */

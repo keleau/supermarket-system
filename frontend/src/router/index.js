@@ -52,6 +52,12 @@ export const constantRoutes = [
             meta: { title: '收银开单', permissions: ['sale:create'] },
           },
           {
+            path: 'return',
+            name: 'SaleReturn',
+            component: () => import('@/views/sale/ReturnOrderPage.vue'),
+            meta: { title: '退货单', permissions: ['sale:read'] },
+          },
+          {
             path: 'statistics',
             name: 'SaleStatistics',
             component: () => import('@/views/sale/SaleStatsPage.vue'),
@@ -118,6 +124,12 @@ export const constantRoutes = [
             meta: { title: '库存盘点', permissions: ['stocktake:read'] },
           },
         ],
+      },
+      {
+        path: 'purchase',
+        name: 'Purchase',
+        component: () => import('@/views/purchase/PurchasePage.vue'),
+        meta: { title: '采购管理', icon: 'ShoppingTrolley', permissions: ['purchase:read'] },
       },
       {
         path: 'supplier',

@@ -190,8 +190,9 @@ async function hasBusinessRecords(id) {
     `SELECT
        (SELECT COUNT(*) FROM stock_log WHERE product_id = ?) +
        (SELECT COUNT(*) FROM sale_item WHERE product_id = ?) +
-       (SELECT COUNT(*) FROM stocktake_item WHERE product_id = ?) AS cnt`,
-    [id, id, id]
+       (SELECT COUNT(*) FROM stocktake_item WHERE product_id = ?) +
+       (SELECT COUNT(*) FROM purchase_item WHERE product_id = ?) AS cnt`,
+    [id, id, id, id]
   );
   return rows[0].cnt > 0;
 }

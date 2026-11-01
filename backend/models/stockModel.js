@@ -24,6 +24,7 @@ const LOG_FIELDS = `
     WHEN 5 THEN '盘点盘亏'
     WHEN 6 THEN '期初入库'
     WHEN 7 THEN '手工调整'
+    WHEN 8 THEN '作废回补'
     ELSE '其他'
   END             AS bizTypeName,
   l.quantity,

@@ -75,23 +75,26 @@ Authorization: Bearer <token>
 
 **岗位权限矩阵：**
 
-| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 入库 | 出库 | 库存查看 | 库存盘点 | 商品/分类/供应商 | 用户管理 |
-|------|----------|------------|----------|------|------|----------|----------|------------------|----------|
-| 管理员 | 是 | 全部 | 是 | 是 | 是 | 是 | 制单+审核 | 读写 | 是 |
-| 仓管   | 否 | 否 | 否 | 是 | 是 | 是 | 制单 | 只读 | 否 |
-| 收银员 | 是 | 仅本人 | 否 | 否 | 否 | 否 | 否 | 只读 | 否 |
-| 采购   | 否 | 否 | 否 | 是 | 否 | 是 | 否 | 只读 | 否 |
-| 后勤   | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 只读 | 否 |
-| 会计   | 否 | 全部 | 否 | 否 | 否 | 是 | 只读 | 只读 | 否 |
+| 岗位 | 销售开单 | 销售单查看 | 销售统计 | 退货单 | 入库 | 出库 | 库存查看 | 库存盘点 | 采购管理 | 商品/分类/供应商 | 用户管理 |
+|------|----------|------------|----------|--------|------|------|----------|----------|----------|------------------|----------|
+| 管理员 | 是 | 全部 | 是 | 申请+确认 | 是 | 是 | 是 | 制单+审核 | 制单+收货+付款 | 读写 | 是 |
+| 仓管   | 否 | 否 | 否 | 否 | 是 | 是 | 是 | 制单 | 查看+收货 | 只读 | 否 |
+| 收银员 | 是 | 仅本人 | 否 | 申请+查看本人 | 否 | 否 | 否 | 否 | 否 | 只读 | 否 |
+| 采购   | 否 | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 制单+查看 | 只读 | 否 |
+| 后勤   | 否 | 否 | 否 | 否 | 否 | 否 | 是 | 否 | 否 | 只读 | 否 |
+| 会计   | 否 | 全部 | 否 | 查看全部 | 否 | 否 | 是 | 只读 | 否 | 只读 | 否 |
 
 > 管理员（`role = admin` 或 `position = 管理员`）拥有全部权限（`*`）。
 > 登录 / 获取用户信息接口返回 `permissions` 权限码数组，前端用它控制菜单、路由和按钮；后端接口按同一矩阵再校验一次。
-> 收银员的「销售单查看」只限本人；会计/管理员可看全部。
+> 收银员的「销售单查看」「退货单查看」只限本人；会计/管理员可看全部。
+> 收银员只能为自己的销售单发起退货；退货确认/拒绝和销售作废仅管理员。
+> 采购只能编辑/提交/取消**自己创建的**采购单；收货由仓管或管理员执行；登记付款仅管理员。
 > 操作日志仅管理员可查。
 
 **财务字段脱敏：**
 
 - 非管理员响应会剔除商品 `costPrice`、销售明细 `costPrice`、仪表盘利润字段、库存统计 `totalStockValue`、出入库流水 `inboundPrice`、盘点 `costPrice/diffAmount/totalGainAmount/totalLossAmount`。
+- 采购金额（`totalAmount/payableAmount/paidAmount/payStatus` 与明细 `price/amount`）只对管理员和采购岗位返回；仓管可以查看/收货，但看不到金额。
 - `/api/sale/statistics` 仅管理员可访问，其他角色返回 `code=403`；供应商进货金额排行也仅管理员可访问。
 
 ### 2.5 字段命名
@@ -122,9 +125,10 @@ Authorization: Bearer <token>
 | 商品状态 status | 1 / 0 | 在售 / 下架 |
 | 用户状态 status | 1 / 0 | 启用 / 禁用 |
 | 流水类型 changeType | 1 / 2 | 入库 / 出库 |
-| 流水业务类型 bizType | 1 / 2 / 3 / 4 / 5 / 6 / 7 | 采购入库 / 销售出库 / 销售退货 / 盘点盘盈 / 盘点盘亏 / 期初入库 / 手工调整 |
+| 流水业务类型 bizType | 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 | 采购入库 / 销售出库 / 销售退货 / 盘点盘盈 / 盘点盘亏 / 期初入库 / 手工调整 / 作废回补 |
 | 支付方式 payType | 1 / 2 / 3 / 4 | 现金 / 微信 / 支付宝 / 会员卡 |
 | 销售状态 status | 1 / 2 / 3 | 正常 / 已退货 / 已作废 |
+| 退货单状态 status | 0 / 1 / 2 / 3 | 待确认 / 已确认 / 已拒绝 / 已取消 |
 | 预警状态 warnStatus | 1 / 2 | 低于预警值 / 已缺货 |
 
 ### 2.8 时间格式
@@ -222,7 +226,7 @@ CREATE TABLE `stock_log` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `product_id`    BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
   `change_type`   TINYINT      NOT NULL COMMENT '1 入库 / 2 出库',
-  `biz_type`      TINYINT      NOT NULL DEFAULT 1 COMMENT '业务类型：1采购入库/2销售出库/3销售退货/4盘点盘盈/5盘点盘亏/6期初入库/7手工调整',
+  `biz_type`      TINYINT      NOT NULL DEFAULT 1 COMMENT '业务类型：1采购入库/2销售出库/3销售退货/4盘点盘盈/5盘点盘亏/6期初入库/7手工调整/8作废回补',
   `quantity`      INT          NOT NULL COMMENT '变动数量（正数）',
   `before_num`    INT          NOT NULL COMMENT '变动前库存',
   `after_num`     INT          NOT NULL COMMENT '变动后库存',
@@ -267,6 +271,43 @@ CREATE TABLE `sale_item` (
   KEY `idx_sale_record` (`sale_record_id`),
   KEY `idx_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售明细表';
+
+-- ==================== 销售退货单（独立整单退货 / 红字） ====================
+CREATE TABLE `sale_return_order` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `return_no`      VARCHAR(30)   NOT NULL COMMENT '退货单号',
+  `sale_record_id` BIGINT UNSIGNED NOT NULL COMMENT '原销售单 id',
+  `sale_no`        VARCHAR(30)   NOT NULL COMMENT '原销售单号快照',
+  `status`         TINYINT       NOT NULL DEFAULT 0 COMMENT '0 待确认 / 1 已确认 / 2 已拒绝 / 3 已取消',
+  `total_quantity` INT           NOT NULL DEFAULT 0 COMMENT '退货总件数',
+  `total_amount`   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '冲减营收金额',
+  `operator`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '申请人',
+  `auditor`        VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '确认人',
+  `audit_time`     DATETIME      NULL COMMENT '确认时间',
+  `remark`         VARCHAR(200)  NOT NULL DEFAULT '' COMMENT '备注',
+  `create_time`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_return_no` (`return_no`),
+  KEY `idx_sale_record` (`sale_record_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售退货单（整单退货）';
+
+-- ==================== 销售退货明细 ====================
+CREATE TABLE `sale_return_item` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `return_id`     BIGINT UNSIGNED NOT NULL COMMENT '退货单 id',
+  `product_id`    BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
+  `product_name`  VARCHAR(50)   NOT NULL DEFAULT '' COMMENT '商品名称快照',
+  `category_name` VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '分类名称快照',
+  `quantity`      INT           NOT NULL COMMENT '退货数量',
+  `sale_price`    DECIMAL(10,2) NOT NULL COMMENT '原销售单价快照',
+  `cost_price`    DECIMAL(12,4) NOT NULL DEFAULT 0 COMMENT '原销售成本快照',
+  `amount`        DECIMAL(12,2) NOT NULL COMMENT '小计金额（原成交金额）',
+  PRIMARY KEY (`id`),
+  KEY `idx_return` (`return_id`),
+  KEY `idx_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='销售退货明细';
 
 -- ==================== 库存盘点单 ====================
 CREATE TABLE `stocktake_order` (
@@ -326,6 +367,44 @@ CREATE TABLE `operation_log` (
   KEY `idx_username` (`username`),
   KEY `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志';
+
+-- ==================== 采购单 ====================
+CREATE TABLE `purchase_order` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `order_no`       VARCHAR(30)   NOT NULL COMMENT '采购单号',
+  `supplier_id`    BIGINT UNSIGNED NOT NULL COMMENT '供应商 id',
+  `supplier_name`  VARCHAR(40)   NOT NULL DEFAULT '' COMMENT '供应商名称快照',
+  `status`         TINYINT       NOT NULL DEFAULT 0 COMMENT '0 草稿 / 1 已提交 / 2 已入库 / 3 已取消',
+  `total_amount`   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '采购总金额',
+  `payable_amount` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '应付金额（入库后生成）',
+  `paid_amount`    DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '已付金额',
+  `operator`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '制单人',
+  `submit_time`    DATETIME      NULL COMMENT '提交时间',
+  `receiver`       VARCHAR(20)   NOT NULL DEFAULT '' COMMENT '收货人',
+  `receive_time`   DATETIME      NULL COMMENT '收货时间',
+  `remark`         VARCHAR(200)  NOT NULL DEFAULT '',
+  `create_time`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_no` (`order_no`),
+  KEY `idx_supplier` (`supplier_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购单';
+
+-- ==================== 采购明细 ====================
+CREATE TABLE `purchase_item` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `order_id`     BIGINT UNSIGNED NOT NULL COMMENT '采购单 id',
+  `product_id`   BIGINT UNSIGNED NOT NULL COMMENT '商品 id',
+  `product_name` VARCHAR(50)   NOT NULL DEFAULT '' COMMENT '商品名称快照',
+  `unit`         VARCHAR(6)    NOT NULL DEFAULT '个' COMMENT '单位快照',
+  `quantity`     INT           NOT NULL COMMENT '采购数量',
+  `price`        DECIMAL(10,2) NOT NULL COMMENT '采购单价',
+  `amount`       DECIMAL(12,2) NOT NULL COMMENT '小计金额',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_order_product` (`order_id`, `product_id`),
+  KEY `idx_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购明细';
 ```
 
 ### 3.2 字段 → 接口映射
@@ -1184,7 +1263,9 @@ CREATE TABLE `operation_log` (
 | 名称 | 提交入库 |
 | URL | `/api/stock/inbound` |
 | Method | POST |
-| 访问权限 | admin / 仓管 / 采购（需 stock:in） |
+| 访问权限 | admin / 仓管（需 stock:in） |
+
+> 手工入库仅管理员/仓管可用；采购岗位通过「采购单确认收货」入库（见 4.11.6），不直接调用本接口。
 
 **请求参数（body）：**
 
@@ -1444,7 +1525,8 @@ CREATE TABLE `operation_log` (
 
 ### 4.6 销售管理模块
 
-> 销售结账、退货、作废均涉及库存与流水变更，必须在**数据库事务**中完成。
+> 销售结账、退货确认、作废均涉及库存与流水变更，必须在**数据库事务**中完成。
+> 退货采用独立整单退货单：发起申请只生成单据，管理员确认后才回补库存并冲减营收。
 
 #### 4.6.1 销售记录分页列表
 
@@ -1484,7 +1566,9 @@ CREATE TABLE `operation_log` (
         "operator": "张敏",
         "status": 1,
         "remark": "",
-        "createTime": "2026-10-11 09:42:00"
+        "createTime": "2026-10-11 09:42:00",
+        "activeReturnStatus": 0,
+        "activeReturnNo": "TH20261011-001"
       }
     ],
     "total": 18,
@@ -1494,7 +1578,7 @@ CREATE TABLE `operation_log` (
 }
 ```
 
-**业务校验规则：** 列表不含明细 items（明细走详情接口），按 createTime 倒序。
+**业务校验规则：** 列表不含明细 items（明细走详情接口），按 createTime 倒序。`activeReturnStatus` / `activeReturnNo` 表示该单进行中的退货单（0 待确认 / 1 已确认），无进行中退货时为 `null`。
 
 ---
 
@@ -1605,32 +1689,37 @@ CREATE TABLE `operation_log` (
 
 ---
 
-#### 4.6.4 销售退货
+#### 4.6.4 销售退货（兼容入口）
 
 | 项 | 内容 |
 |----|------|
-| 名称 | 销售退货（整单退款） |
+| 名称 | 销售退货（管理员直接发起并确认整单退货） |
 | URL | `/api/sale/record/return` |
 | Method | POST |
 | 访问权限 | admin |
 
+> 该接口为兼容入口：内部会创建一张独立的整单退货单并立即确认，效果与「4.6.6 发起退货申请 → 4.6.8 管理员确认」组合一致。
+> 需要「收银员申请、管理员确认」的分流流程时，请使用 `/api/sale/return` 系列接口。
+
 **请求参数（body）：**
 
 ```json
-{ "saleNo": "XS20261011-001" }
+{ "saleNo": "XS20261011-001", "remark": "顾客退货" }
 ```
 
-**返回示例：** `{ "code": 200, "msg": "success", "data": null }`
+**返回示例：**
+
+```json
+{ "code": 200, "msg": "success", "data": { "id": 1, "returnNo": "TH20261011-001", "saleNo": "XS20261011-001", "totalQuantity": 5, "totalAmount": 19.5 } }
+```
 
 **业务校验规则（事务内执行）：**
 
 1. 单据不存在 → `{ code: 400, msg: "销售单据不存在" }`。
 2. 单据已退货 → `{ code: 400, msg: "该单据已退货" }`。
 3. 单据已作废 → `{ code: 400, msg: "该单据已作废，无法退货" }`。
-4. **事务内依次执行**：
-   - `sale_record.status = 2`。
-   - 逐项回补库存 `stock_num += quantity`。
-   - 逐项写入 stock_log（changeType=1 入库流水，remark 注明「销售退货」）。
+4. 该单据已有待确认的退货单 → `{ code: 400, msg: "该单据已有待确认的退货单" }`。
+5. **事务内依次执行**：创建退货单与明细 → 逐项回补库存 → 原单 `status = 2` → 退货单置为已确认 → 写操作日志。
 
 ---
 
@@ -1654,12 +1743,202 @@ CREATE TABLE `operation_log` (
 **业务校验规则（事务内执行）：**
 
 1. 单据不存在 → `{ code: 400, msg: "销售单据不存在" }`。
-2. 单据已退货或已作废 → `{ code: 400, msg: "该单据状态异常，无法作废" }`。
-3. **事务内执行**：`sale_record.status = 3`（作废**不恢复库存**，用于误录冲正）。
+2. 单据已退货 → `{ code: 400, msg: "该单据已退货，无法作废" }`。
+3. 单据已作废 → `{ code: 400, msg: "该单据已作废" }`。
+4. **事务内依次执行**：
+   - 逐项回补库存 `stock_num += quantity`，库存恢复后原缺货下架商品自动上架；
+   - 逐项写入 stock_log（changeType=1，`bizType=8` 作废回补）；
+   - 将该单下待确认的退货申请置为已取消；
+   - `sale_record.status = 3`，退出营收统计；
+   - 写操作日志（`module=sale`, `action=void`）。
 
 ---
 
-#### 4.6.6 销售明细按商品查询
+#### 4.6.6 退货单分页列表
+
+| 项 | 内容 |
+|----|------|
+| 名称 | 销售退货单分页列表 |
+| URL | `/api/sale/return/list` |
+| Method | GET |
+| 访问权限 | admin / 会计（全部）；收银员（仅自己发起的申请） |
+
+**请求参数（query）：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| pageNum   | number | 是 | 页码 |
+| pageSize  | number | 是 | 每页条数 |
+| returnNo  | string | 否 | 退货单号（模糊） |
+| saleNo    | string | 否 | 原销售单号（模糊） |
+| status    | number | 否 | 0 待确认 / 1 已确认 / 2 已拒绝 / 3 已取消 |
+| operator  | string | 否 | 申请人（仅 `sale:read:all` 可用） |
+| startTime | string | 否 | 开始日期 YYYY-MM-DD |
+| endTime   | string | 否 | 结束日期 YYYY-MM-DD |
+
+**返回示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "returnNo": "TH20261011-001",
+        "saleRecordId": 1019,
+        "saleNo": "XS20261011-019",
+        "status": 0,
+        "totalQuantity": 3,
+        "totalAmount": 7.5,
+        "operator": "张敏",
+        "auditor": "",
+        "auditTime": null,
+        "remark": "顾客退货",
+        "createTime": "2026-10-11 10:20:00"
+      }
+    ],
+    "total": 1,
+    "pageNum": 1,
+    "pageSize": 10
+  }
+}
+```
+
+---
+
+#### 4.6.7 退货单详情
+
+| 项 | 内容 |
+|----|------|
+| 名称 | 退货单详情 |
+| URL | `/api/sale/return/:id` |
+| Method | GET |
+| 访问权限 | admin / 会计；收银员仅本人发起的单据 |
+
+**返回示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "id": 1,
+    "returnNo": "TH20261011-001",
+    "saleRecordId": 1019,
+    "saleNo": "XS20261011-019",
+    "status": 1,
+    "totalQuantity": 3,
+    "totalAmount": 7.5,
+    "operator": "张敏",
+    "auditor": "系统管理员",
+    "auditTime": "2026-10-11 10:30:00",
+    "remark": "顾客退货",
+    "createTime": "2026-10-11 10:20:00",
+    "items": [
+      {
+        "productId": 1,
+        "productName": "农夫山泉 550ml",
+        "categoryName": "饮料乳品",
+        "quantity": 2,
+        "salePrice": 2,
+        "costPrice": 1.2,
+        "amount": 4
+      }
+    ]
+  }
+}
+```
+
+> 非管理员返回时，明细 `costPrice` 会被剔除（与销售详情口径一致）。
+
+---
+
+#### 4.6.8 发起整单退货申请
+
+| 项 | 内容 |
+|----|------|
+| 名称 | 发起整单退货申请 |
+| URL | `/api/sale/return` |
+| Method | POST |
+| 访问权限 | 收银员 / admin（需 `sale:return:create`） |
+
+**请求参数（body）：**
+
+```json
+{ "saleNo": "XS20261011-019", "remark": "顾客整单退货" }
+```
+
+**返回示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": { "id": 1, "returnNo": "TH20261011-001", "saleNo": "XS20261011-019", "totalQuantity": 3, "totalAmount": 7.5 }
+}
+```
+
+**业务校验规则（事务内执行）：**
+
+1. 销售单不存在 → `{ code: 400, msg: "销售单据不存在" }`。
+2. 已退货 → `{ code: 400, msg: "该单据已退货" }`；已作废 → `{ code: 400, msg: "该单据已作废，无法退货" }`。
+3. 已有待确认的退货单 → `{ code: 400, msg: "该单据已有待确认的退货单" }`（整单退货一张销售单只能退一次，被拒绝/取消后可重新申请）。
+4. 复制原销售明细为退货明细快照（商品名、分类名、售价、成本、成交金额），写入独立退货单；**此时不改库存、不改原单状态、不计入营收变化**。
+5. 写操作日志（`module=sale`, `action=return_apply`）。
+
+---
+
+#### 4.6.9 确认退货（仅管理员）
+
+| 项 | 内容 |
+|----|------|
+| 名称 | 确认整单退货 |
+| URL | `/api/sale/return/:id/confirm` |
+| Method | POST |
+| 访问权限 | admin |
+
+**请求参数：** 无。
+
+**返回示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": { "id": 1, "returnNo": "TH20261011-001", "saleNo": "XS20261011-019", "totalQuantity": 3, "totalAmount": 7.5 }
+}
+```
+
+**业务校验规则（事务内执行）：**
+
+1. 退货单不存在 → `{ code: 400, msg: "退货单不存在" }`。
+2. 非待确认状态 → `{ code: 400, msg: "该退货单已确认" / "该退货单状态异常，无法确认" }`。
+3. 原销售单已退货 / 已作废 → 拒绝。
+4. **事务内依次执行**：
+   - 逐项回补库存 `stock_num += quantity`，缺货下架商品自动上架；
+   - 逐项写入 stock_log（changeType=1，`bizType=3` 销售退货）；
+   - 原销售单 `status = 2` —— 统计口径只认 `status=1`，**即冲减该单对应营收**；
+   - 退货单 `status = 1`，记录确认人与确认时间；
+   - 写操作日志（`module=sale`, `action=return_confirm`）。
+
+---
+
+#### 4.6.10 拒绝 / 取消退货申请
+
+**拒绝**（仅管理员）：`POST /api/sale/return/:id/reject`
+
+**取消**（申请人本人或管理员）：`POST /api/sale/return/:id/cancel`
+
+- 仅「待确认」状态可操作，否则返回 `{ code: 400, msg: "该退货单状态异常，无法拒绝/取消" }`。
+- 非本人且非管理员取消 → `{ code: 403, msg: "只能取消自己发起的退货申请" }`。
+- 拒绝 / 取消均不改库存、不改原销售单状态，并分别写操作日志 `action=return_reject` / `action=return_cancel`。
+- 返回 `{ "code": 200, "msg": "success", "data": null }`。
+
+---
+
+#### 4.6.11 销售明细按商品查询
 
 | 项 | 内容 |
 |----|------|
@@ -1707,7 +1986,7 @@ CREATE TABLE `operation_log` (
 
 ---
 
-#### 4.6.7 销售统计（聚合）
+#### 4.6.12 销售统计（聚合）
 
 | 项 | 内容 |
 |----|------|
@@ -1777,7 +2056,7 @@ CREATE TABLE `operation_log` (
 
 1. 日期区间缺省时默认近 7 天；`startTime` / `endTime` 必须是真实日期且开始不晚于结束，否则返回 `code=400`。
 2. 金额保留两位小数；毛利率 `rate = profit / amount × 100`（amount 为 0 时 rate=0）。
-3. 仅统计 status=1（正常）的销售单据，已退货/已作废单据不计入。
+3. 仅统计 status=1（正常）的销售单据；退货确认后原单变为 status=2、作废后变为 status=3，均自动退出统计，即实现营收冲减。
 4. 商品/分类按**当前主数据**归并：商品或分类改名后，同一商品/分类仍只出一行，不会因历史名称快照被拆开。
 5. `productStats[].salePrice` 为区间**加权均价**（总金额 ÷ 总数量），不是区间内最高价。
 
@@ -1981,8 +2260,8 @@ CREATE TABLE `operation_log` (
 |------|------|------|------|
 | GET | `/api/operation-log/list` | admin | 分页查询，支持 module/action/username/startTime/endTime |
 
-- 模块：`product` / `stock` / `sale` / `stocktake`
-- 动作：`create` / `update` / `delete` / `inbound` / `outbound` / `return` / `void` / `submit` / `audit` / `cancel`
+- 模块：`product` / `stock` / `sale` / `stocktake` / `purchase`
+- 动作：`create` / `update` / `delete` / `inbound` / `outbound` / `return` / `void` / `submit` / `audit` / `receive` / `pay` / `cancel`
 - 日志只读，不提供修改和删除接口。
 
 ### 4.10 经营分析扩展
@@ -1993,6 +2272,76 @@ CREATE TABLE `operation_log` (
 | GET | `/api/dashboard/supplier-ranking?days=30&limit=10` | admin | 近 N 天供应商采购入库金额排行（只统计 `biz_type=1`） |
 
 > 供应商进货金额属于成本数据，仅管理员可看；积压商品只涉及数量，仓管/采购/后勤/会计可看。
+
+### 4.11 采购管理模块
+
+状态流转：`0 草稿 → 1 已提交 → 2 已入库 / 3 已取消`。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET  | `/api/purchase/list` | purchase:read | 采购单分页，支持 orderNo/status/supplierId/startTime/endTime |
+| GET  | `/api/purchase/:id` | purchase:read | 详情（含明细） |
+| POST | `/api/purchase` | purchase:create | 新建草稿 `{ supplierId, items: [{ productId, quantity, price }], remark? }` |
+| PUT  | `/api/purchase/:id` | purchase:create | 编辑草稿（仅本人或管理员） |
+| POST | `/api/purchase/:id/submit` | purchase:create | 提交（仅本人或管理员） |
+| POST | `/api/purchase/:id/cancel` | purchase:create | 取消草稿/已提交（仅本人或管理员） |
+| POST | `/api/purchase/:id/receive` | purchase:receive | 确认收货入库（仓管/管理员） |
+| POST | `/api/purchase/:id/pay` | admin | 登记付款 `{ amount }` |
+
+**采购单字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id / orderNo | number / string | 采购单 id 与单号（`CGYYYYMMDD-NNN`） |
+| supplierId / supplierName | number / string | 供应商 id 与名称快照 |
+| status | number | 0 草稿 / 1 已提交 / 2 已入库 / 3 已取消 |
+| totalAmount | number | 采购总金额（明细小计汇总） |
+| payableAmount | number | 应付金额；收货入库时写入，等于 totalAmount |
+| paidAmount | number | 已付金额；管理员登记付款时累加 |
+| payStatus | number | 0 未付款 / 1 部分付款 / 2 已付清（由应付与已付计算） |
+| operator / receiver | string | 制单人 / 收货人 |
+| submitTime / receiveTime / createTime | string | 时间字段 |
+| items | array | 明细：`productId / productName / unit / quantity / price / amount` |
+
+**业务规则：**
+
+1. 只有草稿可以编辑/提交；草稿和已提交可以取消；已入库和已取消为终态。
+2. 采购只能操作自己创建的采购单（编辑/提交/取消），管理员不受此限制；收货由仓管/管理员执行。
+3. 确认收货在事务内完成：锁定采购单 → 逐个锁定商品 → 增加库存 → 按采购单价更新移动加权成本 → 写 `biz_type=1` 采购入库流水（备注 `采购入库 单号`）→ 采购单置为已入库并生成应付。重复收货返回 400。
+4. 同一商品在一张采购单中不能重复；数量必须为正整数，单价不能为负；单张最多 100 条明细。
+5. 付款仅针对已入库采购单，金额必须大于 0 且不超过未付金额；不做独立付款流水表，付款记录体现在采购单的 `paidAmount` 与操作日志中。
+6. 单号 `CGYYYYMMDD-NNN` 由当日最大序号生成，唯一键冲突时自动重试。
+7. 采购金额与付款字段只对管理员和采购岗位返回；仓管可查看/收货，但接口会剔除金额字段（`totalAmount/payableAmount/paidAmount/payStatus/price/amount`）。
+
+**详情返回示例（节选）：**
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "id": 1,
+    "orderNo": "CG20261101-001",
+    "supplierId": 1,
+    "supplierName": "农夫山泉股份有限公司",
+    "status": 2,
+    "totalAmount": 19,
+    "payableAmount": 19,
+    "paidAmount": 19,
+    "payStatus": 2,
+    "operator": "赵采购",
+    "receiver": "王仓管",
+    "submitTime": "2026-11-01 10:00:00",
+    "receiveTime": "2026-11-01 10:05:00",
+    "createTime": "2026-11-01 09:55:00",
+    "remark": "周末补货",
+    "items": [
+      { "id": 1, "productId": 1, "productName": "农夫山泉 550ml", "unit": "瓶", "quantity": 4, "price": 2.5, "amount": 10 },
+      { "id": 2, "productId": 2, "productName": "伊利纯牛奶 250ml", "unit": "盒", "quantity": 3, "price": 3, "amount": 9 }
+    ]
+  }
+}
+```
 
 ---
 
