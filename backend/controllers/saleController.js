@@ -3,8 +3,14 @@
  * 结账 / 退货 / 作废 均在单个 MySQL 事务内完成，保证「单据 + 库存 + 流水」一致。
  */
 const saleModel = require('../models/saleModel');
+const saleReturnModel = require('../models/saleReturnModel');
 const productModel = require('../models/productModel');
 const stockModel = require('../models/stockModel');
+const {
+  createReturnOrder,
+  confirmReturnOrder,
+  restoreStock,
+} = require('../services/saleReturnService');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
@@ -198,79 +204,65 @@ async function submit(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 4.6.4 销售退货（整单退款，仅管理员）                                   */
+/* 4.6.4 销售退货（兼容接口：管理员直接发起并确认整单退货）                */
+/*                                                                     */
+/* 独立退货单的完整流程见 /api/sale/return；这里保留原入口，             */
+/* 内部同样生成退货单并立即确认，保证历史前端与既有调用方式不受影响。      */
 /* ------------------------------------------------------------------ */
 async function returnSale(req, res) {
+  const saleNo = toStr(req.body.saleNo);
+  assert(saleNo, '请提供销售单号');
+
+  const remark = toStr(req.body.remark).slice(0, 200);
+  const MAX_RETRY = 3;
+
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt += 1) {
+    try {
+      const result = await transaction(async (conn) => {
+        const created = await createReturnOrder(conn, req, { saleNo, remark });
+        await confirmReturnOrder(conn, req, created.id);
+        return created;
+      });
+
+      return ok(res, result);
+    } catch (err) {
+      if (err && err.code === 'ER_DUP_ENTRY' && attempt < MAX_RETRY) continue;
+      throw err;
+    }
+  }
+
+  throw new BizError('退货单号生成冲突，请重试');
+}
+
+/* ------------------------------------------------------------------ */
+/* 4.6.5 销售作废（仅管理员，回补库存）                                   */
+/* ------------------------------------------------------------------ */
+async function voidSale(req, res) {
   const saleNo = toStr(req.body.saleNo);
   assert(saleNo, '请提供销售单号');
 
   const operator = operatorName(req);
 
   await transaction(async (conn) => {
-    // 行锁：防止同一单据被并发重复退货
+    // 行锁：防止同一单据被并发重复作废 / 与退货确认互相穿插
     const record = await saleModel.findRecordBySaleNoForUpdate(conn, saleNo);
     if (!record) throw new BizError('销售单据不存在');
-    if (record.status === 2) throw new BizError('该单据已退货');
-    if (record.status === 3) throw new BizError('该单据已作废，无法退货');
+    if (record.status === 2) throw new BizError('该单据已退货，无法作废');
+    if (record.status === 3) throw new BizError('该单据已作废');
 
-    // 锁定各商品行，回补库存
     const items = await saleModel.findItemsByRecordId(record.id, conn);
 
-    for (const it of items) {
-      const product = await productModel.findByIdForUpdate(conn, it.productId);
-      const beforeNum = product ? product.stock_num : 0;
-      const afterNum = beforeNum + it.quantity;
-
-      if (product) {
-        await productModel.changeStock(conn, it.productId, it.quantity);
-        // 退货后库存恢复，若原为缺货下架则自动上架
-        if (product.status === 0 && afterNum > 0) {
-          await productModel.updateStatus(conn, it.productId, 1);
-        }
-      }
-
-      await stockModel.insertLog(conn, {
-        productId: it.productId,
-        changeType: 1,
-        bizType: STOCK_BIZ.SALE_RETURN,
-        quantity: it.quantity,
-        beforeNum,
-        afterNum,
-        operator,
-        remark: `销售退货 ${record.sale_no}`,
-      });
-    }
-
-    await saleModel.updateStatus(conn, record.id, 2);
-    await writeLog(conn, req, {
-      module: 'sale',
-      action: 'return',
-      bizNo: record.sale_no,
-      beforeStatus: 1,
-      afterStatus: 2,
-      detail: `销售退货，单号 ${record.sale_no}`,
+    // 作废同样要把已扣减的库存加回来，业务类型单独标记为「作废回补」
+    await restoreStock(conn, {
+      items,
+      bizType: STOCK_BIZ.VOID_RESTORE,
+      operator,
+      remark: `销售作废回补 ${record.sale_no}`,
     });
-  });
 
-  return ok(res, null);
-}
+    // 该单下待确认的退货申请一并取消，避免之后被确认造成二次回补
+    await saleReturnModel.cancelPendingBySaleRecordId(conn, record.id);
 
-/* ------------------------------------------------------------------ */
-/* 4.6.5 销售作废（仅管理员，不恢复库存）                                 */
-/* ------------------------------------------------------------------ */
-async function voidSale(req, res) {
-  const saleNo = toStr(req.body.saleNo);
-  assert(saleNo, '请提供销售单号');
-
-  await transaction(async (conn) => {
-    // 行锁：防止同一单据被并发重复作废
-    const record = await saleModel.findRecordBySaleNoForUpdate(conn, saleNo);
-    if (!record) throw new BizError('销售单据不存在');
-    if (record.status === 2 || record.status === 3) {
-      throw new BizError('该单据状态异常，无法作废');
-    }
-
-    // 作废不恢复库存（用于误录冲正），也不生成流水
     await saleModel.updateStatus(conn, record.id, 3);
     await writeLog(conn, req, {
       module: 'sale',
@@ -278,7 +270,7 @@ async function voidSale(req, res) {
       bizNo: record.sale_no,
       beforeStatus: 1,
       afterStatus: 3,
-      detail: `销售作废，单号 ${record.sale_no}`,
+      detail: `销售作废并回补库存，单号 ${record.sale_no}，${items.length} 个商品`,
     });
   });
 

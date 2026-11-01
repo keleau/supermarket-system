@@ -5,7 +5,7 @@
 | 后端技术 | Node.js + Express + MySQL |
 | 前端技术 | Vue 3 + Element Plus（已完成，含全部页面与交互） |
 | 文档定位 | 后端开发的功能需求与业务规则说明（接口细节另见 `api.md`） |
-| 关联文档 | `api.md`（接口契约）、`design.md`（前端设计规范）、`src/api/types.js`（前端数据契约） |
+| 关联文档 | [`api.md`](api.md)（接口契约）、[`../frontend/design.md`](../frontend/design.md)（前端设计规范）、[`../frontend/src/api/types.js`](../frontend/src/api/types.js)（前端数据契约） |
 
 ---
 
@@ -13,7 +13,7 @@
 
 本系统是一个面向超市日常运营的**商品进销存管理后台**，覆盖商品、库存、销售三大核心业务链路，辅以分类、供应商、系统用户与运营仪表盘。
 
-前端已完整实现（登录、商品档案、商品分类、供应商、入库、出入库流水、库存统计、收银开单、销售记录、销售统计、用户管理、个人中心、运营总览共 13 个页面），当前以 mock 数据演示。**后端需按本文档实现接口，使前端从 mock 切换到真实数据。**
+前端已完整实现并接入真实后端接口，覆盖登录、商品档案、商品分类、供应商、入库/出库、出入库流水、库存统计、库存盘点、采购管理、收银开单、销售记录、销售退货单、销售统计、操作日志、用户管理、个人中心与运营总览。接口契约以 [`api.md`](api.md) 为准。
 
 ### 1.1 业务闭环
 
@@ -90,7 +90,8 @@ position === '管理员'  →  role = 'admin'
 | 商品档案、分类、供应商 **增删改** | ✅ | ❌ |
 | 入库 / 出库 | ✅ | ✅ |
 | 销售结账 | ✅ | ✅ |
-| 销售退货 / 作废 | ✅ | ❌ |
+| 发起退货申请 / 取消自己的申请 | ✅ | ✅（收银员） |
+| 确认 / 拒绝退货、销售作废 | ✅ | ❌ |
 | 用户管理（列表/增删改/重置密码） | ✅ | ❌ |
 | 运营仪表盘 / 各类统计 | ✅ | ✅ |
 
@@ -100,7 +101,7 @@ position === '管理员'  →  role = 'admin'
 
 ## 四、数据模型概览
 
-共 7 张表（完整建表 SQL 见 `api.md` 第三章）：
+共 14 张表（完整建表 SQL 见 `api.md` 第三章）：
 
 | 表名 | 用途 | 核心字段 |
 |------|------|----------|
@@ -108,9 +109,16 @@ position === '管理员'  →  role = 'admin'
 | `category` | 商品分类 | name、colorToken、sort、status |
 | `supplier` | 供应商 | supplierName、contactPerson、phone、address |
 | `product` | 商品档案 | productCode、productName、categoryId、costPrice、salePrice、stockNum、warnNum、supplierId、status |
-| `stock_log` | 出入库流水 | productId、changeType、quantity、beforeNum、afterNum、operator |
+| `stock_log` | 出入库流水 | productId、changeType、bizType、quantity、beforeNum、afterNum、operator |
 | `sale_record` | 销售记录 | saleNo、totalQuantity、totalAmount、payType、status、operator |
 | `sale_item` | 销售明细 | saleRecordId、productId、quantity、salePrice、costPrice、amount |
+| `sale_return_order` | 销售退货单（整单退货） | returnNo、saleRecordId、saleNo、status、totalQuantity、totalAmount、operator、auditor |
+| `sale_return_item` | 销售退货明细 | returnId、productId、quantity、salePrice、costPrice、amount |
+| `stocktake_order` | 库存盘点单 | takeNo、status、operator、auditor、盘盈/盘亏汇总 |
+| `stocktake_item` | 库存盘点明细 | orderId、productId、bookQty、actualQty、diffQty、costPrice、reason |
+| `operation_log` | 操作日志 | userId、username、module、action、bizNo、beforeStatus、afterStatus、detail、ip |
+| `purchase_order` | 采购单 | orderNo、supplierId、status、totalAmount、payableAmount、paidAmount |
+| `purchase_item` | 采购明细 | orderId、productId、quantity、price、amount |
 
 ---
 
@@ -209,7 +217,7 @@ position === '管理员'  →  role = 'admin'
 
 ### 5.6 销售管理模块（核心）
 
-**功能点：** 销售记录列表、销售记录详情、提交销售（收银结账）、销售退货、销售作废、销售明细按商品查询、销售统计聚合。
+**功能点：** 销售记录列表、销售记录详情、提交销售（收银结账）、独立整单退货单（申请/确认/拒绝/取消）、销售作废、销售明细按商品查询、销售统计聚合。
 
 #### 5.6.1 提交销售（收银结账）
 
@@ -229,19 +237,37 @@ position === '管理员'  →  role = 'admin'
 
 **金额口径：** 销售价一律以商品表当前 `sale_price` 为准，忽略前端传入的 `salePrice`（防止收银价篡改）；成本价取商品 `cost_price`（用于毛利统计）。
 
-#### 5.6.2 销售退货（整单退款）
+#### 5.6.2 独立整单退货单（红字冲销）
 
-**事务流程：**
+退货不再直接改动原销售单，而是生成**独立退货单**（`sale_return_order` + `sale_return_item`），状态：
+`0 待确认 → 1 已确认 / 2 已拒绝 / 3 已取消`。
 
-1. 校验单据状态：已退货/已作废则拒绝。
-2. 单据置为「已退货」（status=2）。
-3. 逐商品回补库存 `stock_num += quantity`。
-4. 逐商品写入入库流水（changeType=1，备注注明「销售退货」）。
+**发起申请（收银员 / 管理员）：**
+
+1. 校验原销售单存在且为「正常」（status=1）；已退货/已作废则拒绝。
+2. 同一销售单最多存在一张「待确认 / 已确认」的退货单；被拒绝/取消后可重新申请。
+3. 复制原销售明细为退货明细快照（商品名、分类名、售价、成本、成交金额），生成退货单号 `TH + yyyyMMdd + - + 序号`。
+4. 此阶段**不动库存、不改原单状态**，仅写操作日志 `return_apply`。
+
+**管理员确认（事务内）：**
+
+1. 校验退货单为「待确认」，原销售单仍为「正常」。
+2. 逐商品回补库存 `stock_num += quantity`；缺货下架商品自动上架。
+3. 逐商品写入 `stock_log`（changeType=1，`bizType=3` 销售退货）。
+4. 原销售单置为「已退货」（status=2）——销售统计只认 status=1，**即冲减该单营收**。
+5. 退货单置为「已确认」，记录确认人与确认时间，写操作日志 `return_confirm`。
+
+**拒绝 / 取消：** 仅待确认状态可操作；拒绝由管理员执行，取消由申请人或管理员执行；均不改库存、不改原单状态，写操作日志 `return_reject` / `return_cancel`。
+
+> 兼容入口 `POST /api/sale/record/return`（仅管理员）：内部创建退货单并立即确认，等价于「申请 + 确认」。
 
 #### 5.6.3 销售作废
 
-- 仅将单据置为「已作废」（status=3），**不恢复库存**（用于误录冲正场景）。
+- 事务内**回补库存** `stock_num += quantity`，并逐商品写入 `stock_log`（changeType=1，`bizType=8` 作废回补）。
+- 原销售单调为「已作废」（status=3），退出营收统计。
+- 该单下待确认的退货申请一并置为「已取消」，避免之后被确认造成二次回补。
 - 已退货/已作废的单据不可再作废。
+- 写操作日志 `void`。
 
 #### 5.6.4 销售统计（后端聚合）
 
@@ -250,7 +276,7 @@ position === '管理员'  →  role = 'admin'
   - 每日趋势：区间内每天的销售额/成本/毛利（无销售日为 0）；
   - 分类占比：各分类销售额（降序）；
   - 商品统计：各商品的销量/金额/成本/毛利/毛利率（降序）。
-- **口径**：仅统计「正常」单据（status=1），已退货/已作废不计入。
+- **口径**：仅统计「正常」单据（status=1），已退货/已作废不计入；退货确认或作废即从统计中剔除，实现营收冲减。
 
 ---
 
@@ -278,8 +304,8 @@ position === '管理员'  →  role = 'admin'
 | 提交入库 | stock_num +N | changeType=1 | 缺货可自动上架 |
 | 提交出库 | stock_num -N | changeType=2 | 先校验库存充足 |
 | 提交销售 | stock_num -N（逐项） | changeType=2（逐项） | 写 sale_record + sale_item |
-| 销售退货 | stock_num +N（逐项） | changeType=1（逐项） | 单据置为已退货 |
-| 销售作废 | 不变 | 不生成 | 单据置为已作废 |
+| 退货确认 | stock_num +N（逐项） | changeType=1，bizType=3（逐项） | 退货单已确认，原单置为已退货（冲减营收） |
+| 销售作废 | stock_num +N（逐项） | changeType=1，bizType=8（逐项） | 原单置为已作废，取消待确认退货申请 |
 
 ### 6.2 库存不足处理
 
@@ -327,7 +353,7 @@ position === '管理员'  →  role = 'admin'
 ## 九、后端交付清单
 
 1. 数据库初始化脚本（建表 SQL + 预置基础数据 SQL）。
-2. Express 应用（按 `api.md` 实现全部 37 个接口）。
+2. Express 应用（按 `api.md` 实现全部 69 个接口）。
 3. JWT 鉴权中间件 + 角色鉴权中间件。
 4. 统一响应封装 + 全局错误处理中间件。
 5. 事务封装（库存/销售模块）。

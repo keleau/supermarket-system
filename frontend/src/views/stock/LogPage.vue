@@ -35,6 +35,7 @@ const BIZ_TYPES = {
   5: { label: '盘点盘亏', tag: 'danger' },
   6: { label: '期初入库', tag: 'success' },
   7: { label: '手工调整', tag: 'info' },
+  8: { label: '作废回补', tag: 'danger' },
 }
 
 const BIZ_OPTIONS = Object.entries(BIZ_TYPES).map(([value, meta]) => ({

@@ -2,7 +2,7 @@
  * 库存流水业务类型
  *
  * change_type 只区分「入 / 出」，无法说明这笔库存为什么变。
- * biz_type 用于区分采购、销售、退货、盘点、期初和手工调整。
+ * biz_type 用于区分采购、销售、退货、盘点、期初、手工调整和作废回补。
  */
 const STOCK_BIZ = Object.freeze({
   PURCHASE_IN: 1,
@@ -12,6 +12,7 @@ const STOCK_BIZ = Object.freeze({
   STOCKTAKE_LOSS: 5,
   OPENING: 6,
   MANUAL_ADJUST: 7,
+  VOID_RESTORE: 8,
 });
 
 const STOCK_BIZ_LABELS = Object.freeze({
@@ -22,6 +23,7 @@ const STOCK_BIZ_LABELS = Object.freeze({
   5: '盘点盘亏',
   6: '期初入库',
   7: '手工调整',
+  8: '作废回补',
 });
 
 const STOCK_BIZ_VALUES = Object.freeze(Object.keys(STOCK_BIZ_LABELS).map(Number));

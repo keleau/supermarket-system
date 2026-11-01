@@ -252,10 +252,21 @@ async function checkoutAndReturn() {
 
   const row = page.locator('.el-table__row').first()
   await row.waitFor({ timeout: 10000 })
-  await row.getByRole('button', { name: '退款退货', exact: true }).click()
+  await row.getByRole('button', { name: '申请退货', exact: true }).click()
+  await confirmBox('提交申请')
+  await page.getByText(/已提交，等待管理员确认/).waitFor({ timeout: 10000 })
+
+  await page.goto(`${BASE}/sale/return`)
+  await page.getByRole('heading', { name: '销售退货单' }).waitFor({ timeout: 10000 })
+  const returnRow = page.locator('.el-table__row').first()
+  await returnRow.getByText('待确认', { exact: true }).waitFor({ timeout: 10000 })
+  await returnRow.getByRole('button', { name: '确认', exact: true }).click()
   await confirmBox('确认退货')
-  await page.getByText(/已退款退货/).waitFor({ timeout: 10000 })
-  await page.locator('.el-table__row').first().getByText('已退货').waitFor({ timeout: 10000 })
+  await page.getByText('退货已确认，库存已回补').waitFor({ timeout: 10000 })
+  await page.locator('.el-table__row').first().getByText('已确认', { exact: true }).waitFor({ timeout: 10000 })
+
+  await page.goto(`${BASE}/sale/record`)
+  await page.locator('.el-table__row').first().getByText('已退货', { exact: true }).waitFor({ timeout: 10000 })
 }
 
 async function stocktakeFlow() {
@@ -357,6 +368,7 @@ async function checkCashier() {
   assert.equal(await menuCount('采购管理'), 0, '收银员不应看到采购管理')
   assert.equal(await ensureSubmenu('销售管理'), true, '收银员应看到销售管理')
   assert.equal(await menuCount('收银开单'), 1, '收银员应看到收银开单')
+  assert.equal(await menuCount('退货单'), 1, '收银员应看到退货单')
   assert.equal(await menuCount('销售统计'), 0, '收银员不应看到销售统计')
 
   await page.goto(`${BASE}/stock/stocktake`)
@@ -411,6 +423,7 @@ async function checkAccountant() {
 
   assert.equal(await ensureSubmenu('销售管理'), true, '会计应看到销售管理')
   assert.equal(await menuCount('销售记录'), 1, '会计应看到销售记录')
+  assert.equal(await menuCount('退货单'), 1, '会计应看到退货单')
   assert.equal(await menuCount('收银开单'), 0, '会计不应看到收银开单')
   assert.equal(await menuCount('采购管理'), 0, '会计不应看到采购管理')
   assert.equal(await ensureSubmenu('库存管理'), true, '会计应看到库存管理')
@@ -486,7 +499,7 @@ async function main() {
     await step('管理员登录', () => login('admin', '123456'))
     await step('新增商品 + 期初入库 + 库存校验', createProductWithOpeningStock)
     await step('入库/出库切换 + 列表重载', switchInboundOutbound)
-    await step('销售开单 + 退款退货', checkoutAndReturn)
+    await step('销售开单 + 退货申请/确认', checkoutAndReturn)
     await step('库存盘点：生成/保存/提交/审核', stocktakeFlow)
     await step('采购：制单/提交/收货/付款', purchaseFlow)
     await step('操作日志记录盘点审核', checkOperationLog)

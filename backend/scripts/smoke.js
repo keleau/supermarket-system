@@ -403,6 +403,157 @@ async function main() {
     operatorOwnRecord.payload
   );
 
+  /* ---------- 独立整单退货单：收银员申请 → 管理员确认回补库存 ---------- */
+  const crossReturn = await request('/api/sale/return', {
+    method: 'POST',
+    token: operatorToken,
+    body: { saleNo },
+  });
+  check(crossReturn.payload.code === 403, '收银员不能为他人的销售单申请退货', crossReturn.payload);
+
+  const applyReturn = await request('/api/sale/return', {
+    method: 'POST',
+    token: operatorToken,
+    body: { saleNo: cashierSaleNo, remark: '顾客整单退货' },
+  });
+  check(
+    applyReturn.payload.code === 200 &&
+      applyReturn.payload.data?.returnNo &&
+      /^TH\d{8}-\d{3}$/.test(applyReturn.payload.data.returnNo),
+    '收银员发起整单退货申请',
+    applyReturn.payload
+  );
+  const returnId = applyReturn.payload.data.id;
+  const returnNo = applyReturn.payload.data.returnNo;
+
+  const pendingRecord = await request(`/api/sale/record/${cashierSaleId}`, { token });
+  check(
+    pendingRecord.payload.data?.activeReturnStatus === 0 &&
+      pendingRecord.payload.data?.activeReturnNo === returnNo,
+    '销售单能带出待确认退货单信息',
+    pendingRecord.payload
+  );
+
+  const cashierConfirmReturn = await request(`/api/sale/return/${returnId}/confirm`, {
+    method: 'POST',
+    token: operatorToken,
+  });
+  check(cashierConfirmReturn.payload.code === 403, '收银员不能确认退货', cashierConfirmReturn.payload);
+
+  const confirmReturn = await request(`/api/sale/return/${returnId}/confirm`, {
+    method: 'POST',
+    token,
+  });
+  check(confirmReturn.payload.code === 200, '管理员确认整单退货', confirmReturn.payload);
+
+  const returnedRecord = await request(`/api/sale/record/${cashierSaleId}`, { token });
+  check(
+    returnedRecord.payload.code === 200 &&
+      returnedRecord.payload.data.status === 2 &&
+      returnedRecord.payload.data.activeReturnStatus === 1 &&
+      returnedRecord.payload.data.activeReturnNo === returnNo,
+    '退货确认后原销售单置为已退货（营收统计剔除）',
+    returnedRecord.payload
+  );
+
+  const returnStockLogs = await request('/api/stock/log/list?productId=1&pageNum=1&pageSize=50', {
+    token,
+  });
+  const returnRestockLog = returnStockLogs.payload.data?.list?.find(
+    (row) => String(row.remark).includes(returnNo) && row.bizType === 3
+  );
+  check(
+    returnRestockLog?.bizTypeName === '销售退货' && returnRestockLog?.changeType === 1,
+    '退货确认写入销售退货流水',
+    returnStockLogs.payload
+  );
+
+  const applyAgain = await request('/api/sale/return', {
+    method: 'POST',
+    token: operatorToken,
+    body: { saleNo: cashierSaleNo },
+  });
+  check(applyAgain.payload.code === 400, '已退货的销售单不能重复申请', applyAgain.payload);
+
+  const returnList = await request('/api/sale/return/list?pageNum=1&pageSize=10', { token });
+  check(
+    returnList.payload.code === 200 &&
+      returnList.payload.data.list.some((row) => row.returnNo === returnNo && row.status === 1),
+    '退货单列表包含已确认记录',
+    returnList.payload
+  );
+
+  const cashierReturnList = await request('/api/sale/return/list?pageNum=1&pageSize=10', {
+    token: operatorToken,
+  });
+  check(
+    cashierReturnList.payload.code === 200 &&
+      cashierReturnList.payload.data.list.some((row) => row.returnNo === returnNo),
+    '收银员可查看自己发起的退货单',
+    cashierReturnList.payload
+  );
+
+  const returnOpLogs = await request(
+    '/api/operation-log/list?pageNum=1&pageSize=100&module=sale&action=return_confirm',
+    { token }
+  );
+  check(
+    returnOpLogs.payload.code === 200 &&
+      returnOpLogs.payload.data.list.some((row) => row.bizNo === returnNo),
+    '操作日志记录退货确认',
+    returnOpLogs.payload
+  );
+
+  /* ---------- 销售作废：回补库存并写「作废回补」流水 ---------- */
+  const voidProductBefore = await request('/api/product/2', { token });
+  const voidProductStock = Number(voidProductBefore.payload.data.stockNum);
+
+  const voidTarget = await request('/api/sale/record', {
+    method: 'POST',
+    token,
+    body: { payType: 1, items: [{ productId: 2, quantity: 1 }] },
+  });
+  check(voidTarget.payload.code === 200, '创建待作废销售单', voidTarget.payload);
+
+  const voided = await request('/api/sale/record/void', {
+    method: 'POST',
+    token,
+    body: { saleNo: voidTarget.payload.data.saleNo },
+  });
+  check(voided.payload.code === 200, '销售作废成功', voided.payload);
+
+  const voidProductAfter = await request('/api/product/2', { token });
+  check(
+    Number(voidProductAfter.payload.data.stockNum) === voidProductStock,
+    '作废后库存回补',
+    { before: voidProductStock, after: voidProductAfter.payload.data.stockNum }
+  );
+
+  const voidLogs = await request('/api/stock/log/list?productId=2&pageNum=1&pageSize=50', {
+    token,
+  });
+  const voidRestoreLog = voidLogs.payload.data?.list?.find(
+    (row) =>
+      String(row.remark).includes(voidTarget.payload.data.saleNo) &&
+      row.bizType === 8
+  );
+  check(
+    voidRestoreLog?.bizTypeName === '作废回补' && voidRestoreLog?.changeType === 1,
+    '作废回补流水与销售退货区分',
+    voidLogs.payload
+  );
+
+  const voidOpLogs = await request(
+    '/api/operation-log/list?pageNum=1&pageSize=100&module=sale&action=void',
+    { token }
+  );
+  check(
+    voidOpLogs.payload.code === 200 &&
+      voidOpLogs.payload.data.list.some((row) => row.bizNo === voidTarget.payload.data.saleNo),
+    '操作日志记录销售作废',
+    voidOpLogs.payload
+  );
+
   const operatorRecordList = await request('/api/sale/record/list?pageNum=1&pageSize=100', {
     token: operatorToken,
   });

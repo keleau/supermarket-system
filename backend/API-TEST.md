@@ -385,39 +385,61 @@ curl "http://localhost:3000/api/sale/item/list?productId=1&pageNum=1&pageSize=10
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 退货 / 作废（仅管理员）
+### 退货 / 作废
 
 ```bash
-# 退货：单据置为已退货，逐项回补库存并写入库流水
-curl -X POST http://localhost:3000/api/sale/record/return \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"saleNo":"XS20261011-001"}'
-
-# 重复退货 → {"code":400,"msg":"该单据已退货"}
-curl -X POST http://localhost:3000/api/sale/record/return \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"saleNo":"XS20261011-001"}'
-
-# 作废：仅置状态，不恢复库存
-curl -X POST http://localhost:3000/api/sale/record/void \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"saleNo":"XS20261011-002"}'
-
-# 已退货/已作废再作废 → {"code":400,"msg":"该单据状态异常，无法作废"}
-curl -X POST http://localhost:3000/api/sale/record/void \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"saleNo":"XS20261011-002"}'
-
-# 操作员调用退货 → {"code":403,"msg":"无权限执行该操作"}
 OPTOKEN=$(curl -s -X POST http://localhost:3000/api/user/login \
   -H "Content-Type: application/json" \
   -d '{"username":"shouyin01","password":"123456"}' \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
+# ---- 独立整单退货单（收银员申请 → 管理员确认）----
+# 1) 收银员发起退货申请：只生成退货单，不动库存 / 营收
+curl -X POST http://localhost:3000/api/sale/return \
+  -H "Authorization: Bearer $OPTOKEN" -H "Content-Type: application/json" \
+  -d '{"saleNo":"XS20261011-003","remark":"顾客整单退货"}'
+# → {"code":200,"data":{"id":1,"returnNo":"TH20261011-001",...}}
+
+# 2) 收银员不能确认 → {"code":403,"msg":"无权限执行该操作"}
+curl -X POST http://localhost:3000/api/sale/return/1/confirm \
+  -H "Authorization: Bearer $OPTOKEN"
+
+# 3) 管理员确认：回补库存 + 原单置为已退货（冲减营收）+ 写 bizType=3 流水
+curl -X POST http://localhost:3000/api/sale/return/1/confirm \
+  -H "Authorization: Bearer $TOKEN"
+
+# 4) 退货单详情 / 列表
+curl http://localhost:3000/api/sale/return/1 -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:3000/api/sale/return/list?status=1&pageNum=1&pageSize=10" \
+  -H "Authorization: Bearer $TOKEN"
+
+# 5) 重复申请 → {"code":400,"msg":"该单据已退货"}
+curl -X POST http://localhost:3000/api/sale/return \
+  -H "Authorization: Bearer $OPTOKEN" -H "Content-Type: application/json" \
+  -d '{"saleNo":"XS20261011-003"}'
+
+# ---- 兼容入口：管理员直接退货（内部创建退货单并立即确认）----
 curl -X POST http://localhost:3000/api/sale/record/return \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"saleNo":"XS20261011-001"}'
+
+# ---- 销售作废：回补库存 + 写 bizType=8「作废回补」流水 ----
+curl -X POST http://localhost:3000/api/sale/record/void \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"saleNo":"XS20261011-002"}'
+
+# 已退货/已作废再作废 → {"code":400,"msg":"该单据已作废"}
+curl -X POST http://localhost:3000/api/sale/record/void \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"saleNo":"XS20261011-002"}'
+
+# 操作员调用作废 → {"code":403,"msg":"无权限执行该操作"}
+curl -X POST http://localhost:3000/api/sale/record/void \
   -H "Authorization: Bearer $OPTOKEN" -H "Content-Type: application/json" \
   -d '{"saleNo":"XS20261011-003"}'
 ```
+
+> 流水区分：销售退货 `bizType=3`（销售退货）、销售作废 `bizType=8`（作废回补）。
 
 ### 销售统计聚合
 

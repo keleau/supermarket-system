@@ -2,6 +2,8 @@
 
 Node.js + Express + MySQL 实现的进销存管理后台接口，严格对齐 [`api.md`](api.md) 接口契约与 [`backend-requirements.md`](backend-requirements.md) 业务需求。
 
+> 本文档目录中的 `api.md` 是项目唯一的接口契约；前端使用说明见 [`frontend/前端接口对接文档.md`](../frontend/前端接口对接文档.md)，如有冲突以 `api.md` 为准。
+
 ---
 
 ## 一、快速开始
@@ -55,7 +57,7 @@ express demo/
 │
 ├── db/
 │   ├── pool.js             连接池 + query/execute/transaction 封装
-│   ├── schema.sql          建表 SQL（12 张表）
+│   ├── schema.sql          建表 SQL（14 张表）
 │   ├── seed.sql            预置基础数据 SQL
 │   ├── migrations/         增量迁移脚本（已有数据库升级用）
 │   └── init.js             一键初始化脚本（建库→建表→预置→写用户）
@@ -70,14 +72,17 @@ express demo/
 │   ├── userController.js       categoryController.js
 │   ├── productController.js    supplierController.js
 │   ├── stockController.js      stocktakeController.js  saleController.js
+│   ├── saleReturnController.js 独立整单退货单
 │   ├── purchaseController.js   dashboardController.js  operationLogController.js
 │
 ├── services/
-│   └── inventoryService.js 公共入库逻辑（库存 + 加权成本 + 流水）
+│   ├── inventoryService.js 公共入库逻辑（库存 + 加权成本 + 流水）
+│   └── saleReturnService.js 退货申请 / 确认（回补库存 + 冲减营收）
 │
 ├── models/                 模型层：SQL 与数据持久化
 │   ├── userModel.js       categoryModel.js   productModel.js
 │   ├── supplierModel.js   stockModel.js      stocktakeModel.js  saleModel.js
+│   ├── saleReturnModel.js 销售退货单
 │   ├── purchaseModel.js   dashboardModel.js  operationLogModel.js
 │
 ├── middleware/
@@ -92,6 +97,7 @@ express demo/
 │   ├── cost.js             移动加权平均成本
 │   ├── finance.js          成本/毛利字段脱敏
 │   ├── stockBiz.js         库存流水业务类型
+│   ├── saleReturn.js       退货单状态与金额计算
 │   ├── stocktake.js        盘点差异计算
 │   ├── purchase.js         采购金额与状态判断
 │   ├── operationLog.js     操作日志写入
@@ -156,7 +162,8 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 |------|------|
 | 商品 / 分类 / 供应商 增删改 | 仅 admin |
 | 用户管理（列表/增删改/重置密码） | 仅 admin |
-| 销售退货 / 作废 | 仅 admin |
+| 发起退货申请 / 取消自己的申请 | 收银员 + admin（`sale:return:create`） |
+| 确认 / 拒绝退货、销售作废 | 仅 admin |
 | 入库 / 出库 / 销售结账 | admin + operator |
 | 各类查询与统计 | admin + operator |
 
@@ -169,16 +176,17 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 | 提交入库 | `stock_num + N` | changeType=1 | 缺货商品自动上架 |
 | 提交出库 | `stock_num - N` | changeType=2 | 先校验库存充足 |
 | 提交销售 | 逐项 `- N` | 逐项 changeType=2 | 写 sale_record + sale_item |
-| 销售退货 | 逐项 `+ N` | 逐项 changeType=1 | 单据置为已退货 |
-| 销售作废 | 不变 | 不生成 | 单据置为已作废 |
+| 发起退货申请 | 不变 | 不生成 | 写独立退货单 + 明细（待确认） |
+| 确认退货 | 逐项 `+ N` | 逐项 changeType=1，bizType=3 | 退货单已确认，原单置为已退货（冲减营收） |
+| 销售作废 | 逐项 `+ N` | 逐项 changeType=1，bizType=8 | 原单置为已作废，同时取消其待确认退货申请 |
 
 `db/pool.js` 的 `transaction(handler)` 封装了 `beginTransaction / commit / rollback / release`，回调内抛错自动回滚。
 
 ### 3.4 并发与数据一致性
 
 - **防超卖**：销售结账、出库、退货均先 `SELECT ... FOR UPDATE` 锁定商品行，再校验库存、扣减。
-- **自动上下架**：库存被扣到 0 时自动置 `status=0`；入库/销售退货使库存恢复后，原缺货下架商品自动上架。
-- **防重复操作**：退货/作废先锁定 `sale_record` 行再判断状态。
+- **自动上下架**：库存被扣到 0 时自动置 `status=0`；入库/退货确认/作废回补使库存恢复后，原缺货下架商品自动上架。
+- **防重复操作**：退货确认/作废先锁 `sale_record` 行，再按固定顺序锁 `sale_return_order` 行，最后按明细顺序锁商品行，避免并发重复回补与死锁；同一销售单最多存在一张进行中的退货单。
 - **销售单号防重**：`XS + yyyyMMdd + - + 3 位当日序号`，由 `uk_sale_no` 唯一索引兜底；撞号时自动重试（最多 3 次）。
 - **金额精度**：统一 `DECIMAL` 存储，`round2()` 计算保留两位小数，规避浮点误差。
 - **流水不可变**：`stock_log` 只增不改不删，每条记录均含 `beforeNum` / `afterNum`，库存账可追溯。
@@ -197,7 +205,10 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 | 条码为空自动生成 `690` + 10 位序号 | `productModel.generateProductCode` |
 | 库存为 0 自动下架 | `productModel.changeStock` / `productController.buildPayload` |
 | 预警判定（缺货 / 低于预警值，缺货不受预警值影响） | `stockModel.buildWarnWhere` |
-| 销售统计仅计 status=1 的正常单据 | `saleModel.statsWhere` |
+| 销售统计仅计 status=1 的正常单据（退货确认/作废后自动剔除，即冲减营收） | `saleModel.statsWhere` |
+| 整单退货单状态流转与金额快照 | `utils/saleReturn.js` |
+| 退货确认回补库存 + 冲减营收 | `services/saleReturnService.confirmReturnOrder` |
+| 作废回补库存（bizType=8）并取消待确认退货 | `saleController.voidSale` |
 | 统计按当前商品/分类名归并、售价取加权均价 | `saleModel.statsByProduct` |
 | 日期参数校验（真实日期 + 开始不晚于结束） | `utils/validate.assertDateRange` |
 | 金额/毛利率计算 | `saleModel.statsSummary` / `statsByProduct` |
@@ -214,7 +225,7 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 
 ## 四、接口清单
 
-完整字段与示例见 [`api.md`](api.md)，共 63 个接口（含健康检查）：
+完整字段与示例见 [`api.md`](api.md)，共 69 个接口（含健康检查）：
 
 | 模块 | 前缀 | 数量 | 接口 |
 |------|------|------|------|
@@ -225,7 +236,7 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 | 库存 | `/api/stock` | 8 | inbound/list、inbound、outbound/list、outbound、warn/list、log/list、statistics、slow-moving |
 | 库存盘点 | `/api/stocktake` | 7 | list、detail、生成、保存实盘、提交、审核、取消 |
 | 采购 | `/api/purchase` | 8 | list、detail、新建、编辑、提交、收货、取消、登记付款 |
-| 销售 | `/api/sale` | 7 | record/list、record/:id、record、record/return、record/void、item/list、statistics |
+| 销售 | `/api/sale` | 13 | record/list、record/:id、record、record/return（兼容）、record/void、return/list、return、return/:id、return/confirm、return/reject、return/cancel、item/list、statistics |
 | 仪表盘 | `/api/dashboard` | 6 | overview、sale-trend、stock-top、category-stock、hot-products、supplier-ranking |
 | 操作日志 | `/api/operation-log` | 1 | list（仅管理员） |
 
@@ -239,8 +250,8 @@ if (quantity <= 0) throw new BizError('入库数量必须大于 0');
 - `db/seed.sql` 中不含用户数据：密码需 bcrypt 加密，无法用纯 SQL 预置，由 `db/init.js` 运行期写入。
 - 内存版 token 黑名单在服务重启后失效；账号状态与 `token_version` 存在数据库中，重启不影响这部分失效逻辑。生产环境建议把黑名单替换为 Redis。
 - 已有数据库升级需按顺序执行 `db/migrations/` 下的增量脚本：
-  `001_add_token_version.sql`、`002_weighted_avg_cost.sql`、`003_stock_biz_type.sql`、`004_stocktake.sql`、`005_operation_log.sql`、`006_purchase.sql`（均为增量，不会清空数据）。
-- 操作日志已单独建表 `operation_log`：入库、销售、退货、作废、盘点提交/审核、采购制单/提交/收货/付款等关键动作在业务事务内写入，仅管理员可查。
+  `001_add_token_version.sql`、`002_weighted_avg_cost.sql`、`003_stock_biz_type.sql`、`004_stocktake.sql`、`005_operation_log.sql`、`006_purchase.sql`、`007_sale_return.sql`（均为增量，不会清空数据）。
+- 操作日志已单独建表 `operation_log`：入库、销售、退货申请/确认/拒绝/取消、作废、盘点提交/审核、采购制单/提交/收货/付款等关键动作在业务事务内写入，仅管理员可查。
 
 ---
 

@@ -50,7 +50,7 @@ async function main() {
   const schemaSql = stripComments(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
   const seedSql = stripComments(fs.readFileSync(path.join(__dirname, 'seed.sql'), 'utf8'));
   await rootConn.query(schemaSql);
-  console.log('[init] 建表完成（12 张表）');
+  console.log('[init] 建表完成（14 张表）');
   await rootConn.query(seedSql);
   console.log('[init] 预置数据完成（5 分类 / 5 供应商 / 16 商品 / 流水 / 销售单）');
 

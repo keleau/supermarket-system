@@ -4,8 +4,8 @@
  * - GET  /api/sale/record/:id    详情（含 items 明细，明细为下单时的快照）
  * - POST /api/sale/record        收银结账，入参 { items:[{ productId, quantity, salePrice? }], payType?, remark? }
  *                                后端在同一事务内完成：写单 + 明细 + 扣库存 + 写出库流水
- * - POST /api/sale/record/return 整单退货（仅管理员，回补库存）
- * - POST /api/sale/record/void   单据作废（仅管理员，不恢复库存）
+ * - POST /api/sale/record/void   单据作废（仅管理员，回补库存）
+ * - 退货申请 / 确认 / 拒绝 / 取消见 ./saleReturn.js
  * - GET  /api/sale/item/list     按商品查销售明细，入参 { productId, pageNum?, pageSize? }
  * - GET  /api/sale/statistics    聚合统计，入参 { startTime?, endTime?, categoryId?, productName? }
  */
@@ -28,12 +28,7 @@ export function createSaleRecord(data) {
   return post('/sale/record', data)
 }
 
-/** 销售退货（整单，仅管理员） */
-export function returnSaleRecord(saleNo) {
-  return post('/sale/record/return', { saleNo })
-}
-
-/** 销售作废（仅管理员，不恢复库存） */
+/** 销售作废（仅管理员，回补库存并取消待确认退货） */
 export function voidSaleRecord(saleNo) {
   return post('/sale/record/void', { saleNo })
 }

@@ -18,7 +18,13 @@ const RECORD_FIELDS = `
   operator,
   status,
   remark,
-  create_time    AS createTime
+  create_time    AS createTime,
+  (SELECT r.status FROM sale_return_order r
+    WHERE r.sale_record_id = sale_record.id AND r.status IN (0, 1)
+    ORDER BY r.id DESC LIMIT 1) AS activeReturnStatus,
+  (SELECT r.return_no FROM sale_return_order r
+    WHERE r.sale_record_id = sale_record.id AND r.status IN (0, 1)
+    ORDER BY r.id DESC LIMIT 1) AS activeReturnNo
 `;
 
 const ITEM_FIELDS = `
@@ -110,6 +116,12 @@ async function findItemsByRecordId(recordId, conn = null) {
     `SELECT ${ITEM_FIELDS} FROM sale_item WHERE sale_record_id = ? ORDER BY id ASC`,
     [recordId]
   );
+}
+
+/** 按 id 查并加行锁（退货确认 / 作废时使用，与按单号加锁保持相同的锁顺序） */
+async function findRecordByIdForUpdate(conn, id) {
+  const rows = await run(conn, 'SELECT * FROM sale_record WHERE id = ? FOR UPDATE', [id]);
+  return rows[0] || null;
 }
 
 /**
@@ -393,6 +405,7 @@ module.exports = {
   findRecordById,
   findRecordBySaleNo,
   findRecordBySaleNoForUpdate,
+  findRecordByIdForUpdate,
   findItemsByRecordId,
   generateSaleNo,
   createRecord,

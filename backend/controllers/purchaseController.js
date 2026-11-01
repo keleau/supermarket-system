@@ -242,6 +242,9 @@ async function receive(req, res) {
     const items = await purchaseModel.findItems(conn, id);
     if (!items.length) throw new BizError('采购单没有明细');
 
+    // 按商品 id 升序加锁，和销售/退货的锁顺序保持一致，降低并发死锁概率
+    items.sort((a, b) => a.productId - b.productId);
+
     for (const item of items) {
       const product = await productModel.findByIdForUpdate(conn, item.productId);
       if (!product) throw new BizError(`商品「${item.productName}」不存在`);
