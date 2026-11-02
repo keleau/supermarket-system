@@ -16,6 +16,7 @@ const route = useRoute()
 const userStore = useUserStore()
 
 const loginFormRef = ref()
+const passwordInputRef = ref()
 const loading = ref(false)
 
 /** 后端连通性：null 检测中 / true 正常 / false 异常 */
@@ -72,17 +73,18 @@ const particles = Array.from({ length: 22 }, (_, i) => {
   }
 })
 
-/** 演示账号快捷入口（密码统一为后端默认密码 123456） */
+/** 演示账号快捷入口：只填用户名，密码由用户输入，改密后不会填入旧密码 */
 const DEMO_ACCOUNTS = [
-  { username: 'admin', password: '123456', label: '管理员', icon: 'User' },
-  { username: 'cangku01', password: '123456', label: '仓管', icon: 'Box' },
-  { username: 'shouyin01', password: '123456', label: '收银员', icon: 'Tickets' },
+  { username: 'admin', label: '管理员', icon: 'User' },
+  { username: 'cangku01', label: '仓管', icon: 'Box' },
+  { username: 'shouyin01', label: '收银员', icon: 'Tickets' },
 ]
 
-/** 一键填入演示账号（点选后自动填充表单） */
+/** 一键填入演示账号用户名，清空密码并聚焦密码框 */
 function fillAccount(account) {
   loginForm.username = account.username
-  loginForm.password = account.password
+  loginForm.password = ''
+  passwordInputRef.value?.focus()
 }
 
 /** 探测后端是否可用 */
@@ -257,6 +259,7 @@ async function handleLogin() {
           </el-form-item>
           <el-form-item prop="password">
             <el-input
+              ref="passwordInputRef"
               v-model="loginForm.password"
               type="password"
               placeholder="请输入密码"
@@ -286,7 +289,7 @@ async function handleLogin() {
           description="请确认后端已启动（默认 http://localhost:3000），然后再试。"
         />
 
-        <p class="login-note">点击下方账号可快速填入测试账号</p>
+        <p class="login-note">点击下方账号可快速填入用户名，默认密码 123456（修改后请用新密码）</p>
 
         <div class="demo-accounts">
           <button
@@ -301,7 +304,7 @@ async function handleLogin() {
               <el-icon :size="13"><component :is="account.icon" /></el-icon>
               {{ account.label }}
             </span>
-            <span class="demo-cred">{{ account.username }} / {{ account.password }}</span>
+            <span class="demo-cred">{{ account.username }}</span>
           </button>
         </div>
         </div>
