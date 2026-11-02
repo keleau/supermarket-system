@@ -16,6 +16,7 @@ import { Aim, CircleCheckFilled, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { createSaleRecord } from '@/api/modules/sale'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { payMeta } from '@/constants/sale'
 import { money, round2 } from '@/utils/format.js'
 
 const router = useRouter()
@@ -24,14 +25,6 @@ const router = useRouter()
 
 const loading = ref(false)
 const products = ref([])
-
-/** 支付方式（1 现金 2 微信 3 支付宝 4 银行卡，与后端取值 1~4 对齐） */
-const PAY_TYPES = {
-  1: { label: '现金', tag: 'info' },
-  2: { label: '微信支付', tag: 'success' },
-  3: { label: '支付宝', tag: 'success' },
-  4: { label: '银行卡', tag: 'warning' },
-}
 
 async function loadProducts() {
   loading.value = true
@@ -294,7 +287,7 @@ async function handleSubmit() {
 
     successInfo.value = {
       saleNo: record.saleNo,
-      payLabel: PAY_TYPES[payType.value]?.label || '未知',
+      payLabel: payMeta(payType.value).label,
       payable: Number(record.totalAmount),
       received: isCash.value ? received.value : Number(record.totalAmount),
       change: isCash.value ? round2(received.value - Number(record.totalAmount)) : 0,

@@ -12,6 +12,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { usePagination } from '@/composables/usePagination'
+import { payMeta } from '@/constants/sale'
 import {
   getSaleRecordDetail,
   getSaleRecordList,
@@ -28,23 +32,11 @@ const canReadAll = computed(() => userStore.can('sale:read:all'))
 /** 管理员 / 收银员可以发起整单退货申请 */
 const canApplyReturn = computed(() => userStore.can('sale:return:create'))
 
-/** 支付方式（1 现金 2 微信 3 支付宝 4 银行卡） */
-const PAY_TYPES = {
-  1: { label: '现金', tag: 'info' },
-  2: { label: '微信支付', tag: 'success' },
-  3: { label: '支付宝', tag: 'success' },
-  4: { label: '银行卡', tag: 'warning' },
-}
-
 /** 单据状态（1 正常 2 已退货 3 已作废） */
 const SALE_STATUS = {
   1: { label: '正常', tag: 'success' },
   2: { label: '已退货', tag: 'warning' },
   3: { label: '已作废', tag: 'info' },
-}
-
-function payMeta(payType) {
-  return PAY_TYPES[payType] || { label: '未知', tag: 'info' }
 }
 
 function statusMeta(status) {
@@ -56,7 +48,7 @@ function statusMeta(status) {
 const loading = ref(false)
 const records = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({
   dateRange: [], // [开始日期, 结束日期]（YYYY-MM-DD）
@@ -109,17 +101,6 @@ function handleReset() {
   filterForm.operator = ''
   filterForm.payType = ''
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 onMounted(loadList)
@@ -342,9 +323,7 @@ async function reloadAfterWrite() {
         <el-table-column prop="operator" label="收银员" width="96" />
         <el-table-column label="状态" width="150" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusMeta(row.status).tag" effect="light" round size="small">
-              {{ statusMeta(row.status).label }}
-            </el-tag>
+            <StatusTag :meta="statusMeta(row.status)" />
             <el-tag
               v-if="row.activeReturnStatus === 0"
               type="warning"
@@ -391,14 +370,11 @@ async function reloadAfterWrite() {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="handlePageChange"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>
@@ -421,9 +397,7 @@ async function reloadAfterWrite() {
             <el-descriptions-item label="销售时间">{{ detailRecord.createTime }}</el-descriptions-item>
             <el-descriptions-item label="收银员">{{ detailRecord.operator }}</el-descriptions-item>
             <el-descriptions-item label="状态">
-              <el-tag :type="statusMeta(detailRecord.status).tag" effect="light" round size="small">
-                {{ statusMeta(detailRecord.status).label }}
-              </el-tag>
+              <StatusTag :meta="statusMeta(detailRecord.status)" />
               <el-tag
                 v-if="detailRecord.activeReturnStatus === 0"
                 type="warning"

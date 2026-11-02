@@ -6,7 +6,7 @@ const userModel = require('../models/userModel');
 const { signToken, revokeToken } = require('../middleware/auth');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  isBlank, toInt, toStr, paging, assert, isPhone, isIdCard, isUsername, isDate,
+  isBlank, toInt, toStr, paging, assert, isPhone, isIdCard, isUsername, isDate, idParam,
 } = require('../utils/validate');
 const { roleFromPosition, normalizePosition } = require('../utils/role');
 const { permissionsFor } = require('../utils/permissions');
@@ -261,8 +261,7 @@ async function update(req, res) {
 /* 4.1.9 删除用户（仅管理员）                                            */
 /* ------------------------------------------------------------------ */
 async function remove(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少用户 id');
+  const id = idParam(req, '用户');
 
   const exist = await userModel.findById(id);
   assert(exist, '用户不存在');

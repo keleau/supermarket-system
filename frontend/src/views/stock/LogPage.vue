@@ -9,6 +9,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Download } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { usePagination } from '@/composables/usePagination'
 import { getStockLogList } from '@/api/modules/stock'
 import { bizMeta, changeMeta, STOCK_BIZ_OPTIONS } from '@/constants/stock'
 import { downloadCsv } from '@/utils/csv.js'
@@ -22,7 +25,7 @@ const isAdmin = computed(() => userStore.isAdmin)
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({
   productName: '',
@@ -74,17 +77,6 @@ function handleReset() {
   filterForm.bizType = ''
   filterForm.dateRange = []
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 onMounted(loadList)
@@ -202,16 +194,16 @@ function exportLogs() {
         <el-table-column prop="productName" label="商品名称" min-width="180" show-overflow-tooltip />
         <el-table-column label="类型" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="changeMeta(row.changeType).tag" effect="light" round size="small">
-              {{ changeMeta(row.changeType).label }}
-            </el-tag>
+            <StatusTag :meta="changeMeta(row.changeType)" />
           </template>
         </el-table-column>
         <el-table-column label="业务类型" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="bizMeta(row.bizType).tag" effect="plain" round size="small">
-              {{ row.bizTypeName || bizMeta(row.bizType).label }}
-            </el-tag>
+            <StatusTag
+              :meta="bizMeta(row.bizType)"
+              :label="row.bizTypeName || bizMeta(row.bizType).label"
+              effect="plain"
+            />
           </template>
         </el-table-column>
         <el-table-column label="变动数量" align="right" width="120">
@@ -241,14 +233,11 @@ function exportLogs() {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="handlePageChange"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>

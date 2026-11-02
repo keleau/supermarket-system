@@ -1,7 +1,7 @@
 /**
  * 商品分类 Model
  */
-const { query } = require('../db/pool');
+const { query, run } = require('../db/pool');
 
 const FIELDS = `
   id,
@@ -30,6 +30,14 @@ async function listAll() {
 async function findById(id) {
   const rows = await query(`SELECT ${FIELDS} FROM category WHERE id = ? LIMIT 1`, [id]);
   return rows[0] || null;
+}
+
+/** 批量查分类名，返回 Map<id, name>（销售明细快照用） */
+async function nameMapByIds(conn, ids) {
+  if (!ids.length) return new Map();
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = await run(conn, `SELECT id, name FROM category WHERE id IN (${placeholders})`, ids);
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 /** 名称是否已存在 */
@@ -74,4 +82,6 @@ async function countAll() {
   return rows[0].total;
 }
 
-module.exports = { listAll, findById, existsName, hasProducts, create, update, remove, countAll };
+module.exports = {
+  listAll, findById, nameMapByIds, existsName, hasProducts, create, update, remove, countAll,
+};

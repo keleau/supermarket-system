@@ -10,6 +10,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Box, Money, TrendCharts, Wallet } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
 import ChartCard from '@/views/dashboard/components/ChartCard.vue'
 import { axisTextStyle, baseTooltip, cssVar, useEchart } from '@/composables/useEchart.js'
 import { getCategoryList } from '@/api/modules/product'
@@ -518,14 +519,10 @@ const { chartEl: pieChartEl } = useEchart(pieOption)
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          v-model:current-page="pagination.pageNum"
+        <PagePagination
+          v-model:page-num="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :total="productList.length"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @size-change="pagination.pageNum = 1"
         />
       </div>
     </section>

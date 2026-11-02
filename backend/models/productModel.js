@@ -2,14 +2,8 @@
  * 商品档案 Model
  * 支持传入事务连接 conn —— 出入库/销售等事务内调用时，SQL 必须走同一个连接。
  */
-const { pool, query } = require('../db/pool');
+const { query, run } = require('../db/pool');
 const { BizError } = require('../utils/result');
-
-/** 统一执行入口：有事务连接走事务，否则走连接池 */
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
 
 /** 列表/详情返回字段（含 JOIN 出来的 categoryName / supplierName） */
 const SELECT_FIELDS = `
@@ -227,7 +221,6 @@ async function options({ includeOffline = false } = {}) {
 }
 
 module.exports = {
-  run,
   list,
   findById,
   findByIdForUpdate,

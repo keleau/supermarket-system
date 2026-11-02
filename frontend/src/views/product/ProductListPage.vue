@@ -22,7 +22,10 @@ import {
 import { getSupplierOptions } from '@/api/modules/supplier'
 import { getStockLogList } from '@/api/modules/stock'
 import { getSaleItemList } from '@/api/modules/sale'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { usePagination } from '@/composables/usePagination'
 import { changeMeta } from '@/constants/stock'
 import { downloadCsv } from '@/utils/csv.js'
 import { formatInt, money } from '@/utils/format.js'
@@ -48,7 +51,7 @@ async function loadDicts() {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({
   productName: '',
@@ -107,17 +110,6 @@ function handleReset() {
   filterForm.categoryId = ''
   filterForm.status = ''
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 /** 支持从商品分类页跳转携带 categoryId 自动筛选 */
@@ -484,14 +476,11 @@ function nameInitial(name) {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="handlePageChange"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>
@@ -633,9 +622,7 @@ function nameInitial(name) {
               <el-table-column prop="createTime" label="时间" min-width="150" />
               <el-table-column label="类型" width="80" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="changeMeta(row.changeType).tag" effect="light" size="small" round>
-                    {{ changeMeta(row.changeType).label }}
-                  </el-tag>
+                  <StatusTag :meta="changeMeta(row.changeType)" />
                 </template>
               </el-table-column>
               <el-table-column label="数量" align="right" width="90">

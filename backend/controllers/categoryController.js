@@ -3,7 +3,7 @@
  */
 const categoryModel = require('../models/categoryModel');
 const { ok } = require('../utils/result');
-const { toStr, toInt, assert } = require('../utils/validate');
+const { toStr, toInt, assert, idParam } = require('../utils/validate');
 
 /** 解析并校验分类入参 */
 function buildPayload(body) {
@@ -58,8 +58,7 @@ async function update(req, res) {
 
 /* 4.2.4 删除分类 */
 async function remove(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少分类 id');
+  const id = idParam(req, '分类');
 
   const exist = await categoryModel.findById(id);
   assert(exist, '分类不存在');

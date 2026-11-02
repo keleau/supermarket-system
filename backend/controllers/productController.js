@@ -6,7 +6,7 @@ const categoryModel = require('../models/categoryModel');
 const supplierModel = require('../models/supplierModel');
 const { transaction } = require('../db/pool');
 const { ok, page } = require('../utils/result');
-const { toStr, toInt, toNum, round2, round4, paging, assert } = require('../utils/validate');
+const { toStr, toInt, toNum, round2, round4, paging, assert, idParam } = require('../utils/validate');
 const { assertCostUnchanged } = require('../utils/cost');
 const { maskProductCost } = require('../utils/finance');
 const { writeLog } = require('../utils/operationLog');
@@ -86,8 +86,7 @@ async function list(req, res) {
 
 /* 4.3.2 商品详情 */
 async function detail(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少商品 id');
+  const id = idParam(req, '商品');
 
   const product = await productModel.findById(id);
   assert(product, '商品不存在');
@@ -175,8 +174,7 @@ async function update(req, res) {
 
 /* 4.3.5 删除商品 */
 async function remove(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少商品 id');
+  const id = idParam(req, '商品');
 
   const exist = await productModel.findById(id);
   assert(exist, '商品不存在');

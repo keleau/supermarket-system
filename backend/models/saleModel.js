@@ -1,14 +1,8 @@
 /**
  * 销售记录 / 销售明细 / 销售统计 Model
  */
-const { pool, query } = require('../db/pool');
+const { query, run } = require('../db/pool');
 const { round2 } = require('../utils/validate');
-
-/** 事务连接执行入口 */
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
 
 const RECORD_FIELDS = `
   id,
@@ -396,7 +390,6 @@ async function hotProducts(startTime, endTime, limit = 5) {
 }
 
 module.exports = {
-  run,
   recordList,
   findRecordById,
   findRecordBySaleNo,

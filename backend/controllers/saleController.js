@@ -15,7 +15,7 @@ const {
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, round2, round4, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, round2, round4, paging, assert, assertDateRange, idParam, parseDateRange,
 } = require('../utils/validate');
 const { normalizeSaleItems } = require('../utils/saleItems');
 const { maskSaleItems } = require('../utils/finance');
@@ -36,9 +36,7 @@ async function recordList(req, res) {
   const payType = toInt(req.query.payType, null);
   if (payType !== null) assert([1, 2, 3, 4].includes(payType), '支付方式取值不合法');
 
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   // 收银员只能看自己的单据；管理员 / 会计可按收银员筛选
   const operator = hasPermission(req.user, 'sale:read:all')
@@ -52,8 +50,8 @@ async function recordList(req, res) {
     saleNo: toStr(req.query.saleNo) || null,
     operator,
     payType,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   });
 
   return ok(res, page(result.list, result.total, pageNum, pageSize));
@@ -63,8 +61,7 @@ async function recordList(req, res) {
 /* 4.6.2 销售记录详情                                                    */
 /* ------------------------------------------------------------------ */
 async function recordDetail(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少销售单 id');
+  const id = idParam(req, '销售单');
 
   const record = await saleModel.findRecordById(id);
   assert(record, '销售单据不存在');
@@ -138,16 +135,7 @@ async function submit(req, res) {
 
       // 分类名快照：一次查回，避免逐条查库
       const categoryIds = [...new Set(prepared.map((p) => p.categoryId).filter(Boolean))];
-      const categoryNameMap = new Map();
-      if (categoryIds.length) {
-        const placeholders = categoryIds.map(() => '?').join(', ');
-        const rows = await productModel.run(
-          conn,
-          `SELECT id, name FROM category WHERE id IN (${placeholders})`,
-          categoryIds
-        );
-        rows.forEach((r) => categoryNameMap.set(r.id, r.name));
-      }
+      const categoryNameMap = await categoryModel.nameMapByIds(conn, categoryIds);
 
       const itemRows = prepared.map((p) => ({
         productId: p.productId,

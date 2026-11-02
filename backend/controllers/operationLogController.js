@@ -4,15 +4,12 @@
 const operationLogModel = require('../models/operationLogModel');
 const { ok, page } = require('../utils/result');
 const {
-  toStr, paging, assertDateRange, startOfDay, endOfDay,
+  toStr, paging, parseDateRange,
 } = require('../utils/validate');
 
 async function list(req, res) {
   const { pageNum, pageSize, offset } = paging(req.query);
-
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   const result = await operationLogModel.list({
     pageNum,
@@ -21,8 +18,8 @@ async function list(req, res) {
     module: toStr(req.query.module) || null,
     action: toStr(req.query.action) || null,
     username: toStr(req.query.username) || null,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   });
 
   return ok(res, page(result.list, result.total, pageNum, pageSize));

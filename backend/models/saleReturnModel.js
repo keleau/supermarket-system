@@ -5,12 +5,7 @@
  * - 申请时把原销售明细复制成退货明细快照，保证后续商品改名/改价不影响历史单据；
  * - 管理员确认后才回补库存并把原销售单置为「已退货」，从而冲减营收统计。
  */
-const { pool, query } = require('../db/pool');
-
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
+const { query, run } = require('../db/pool');
 
 const ORDER_FIELDS = `
   id,
@@ -228,7 +223,6 @@ async function list({ pageNum, pageSize, offset, returnNo, saleNo, status, opera
 }
 
 module.exports = {
-  run,
   generateReturnNo,
   createOrder,
   createItems,

@@ -10,6 +10,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
+import { usePagination } from '@/composables/usePagination'
 import {
   addSupplier,
   deleteSupplier,
@@ -25,7 +27,7 @@ const isAdmin = computed(() => userStore.isAdmin)
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({ supplierName: '', contactPerson: '' })
 const appliedFilters = reactive({ supplierName: '', contactPerson: '' })
@@ -57,17 +59,6 @@ function handleReset() {
   filterForm.supplierName = ''
   filterForm.contactPerson = ''
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 onMounted(loadList)
@@ -309,14 +300,11 @@ function supplierProductCount(row) {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="handlePageChange"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>

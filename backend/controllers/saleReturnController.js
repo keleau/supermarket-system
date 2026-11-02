@@ -10,7 +10,7 @@ const saleReturnModel = require('../models/saleReturnModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, paging, assert, idParam, parseDateRange,
 } = require('../utils/validate');
 const { maskSaleItems } = require('../utils/finance');
 const { hasPermission } = require('../utils/permissions');
@@ -37,9 +37,7 @@ async function list(req, res) {
   const status = toInt(req.query.status, null);
   if (status !== null) assert(RETURN_STATUS_VALUES.includes(status), '退货状态取值不合法');
 
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   // 收银员只能看自己发起的申请；管理员 / 会计可按申请人筛选
   const operator = hasPermission(req.user, 'sale:read:all')
@@ -54,8 +52,8 @@ async function list(req, res) {
     saleNo: toStr(req.query.saleNo) || null,
     status,
     operator,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   });
 
   return ok(res, page(result.list, result.total, pageNum, pageSize));
@@ -65,8 +63,7 @@ async function list(req, res) {
 /* 退货单详情                                                            */
 /* ------------------------------------------------------------------ */
 async function detail(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少退货单 id');
+  const id = idParam(req, '退货单');
 
   const order = await saleReturnModel.findById(id);
   assert(order, '退货单不存在');
@@ -100,8 +97,7 @@ async function create(req, res) {
 /* 管理员确认退货（回补库存 + 冲减营收，仅管理员）                        */
 /* ------------------------------------------------------------------ */
 async function confirm(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少退货单 id');
+  const id = idParam(req, '退货单');
 
   const result = await transaction((conn) => confirmReturnOrder(conn, req, id));
   return ok(res, result);
@@ -111,8 +107,7 @@ async function confirm(req, res) {
 /* 管理员拒绝退货（仅管理员）                                             */
 /* ------------------------------------------------------------------ */
 async function reject(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少退货单 id');
+  const id = idParam(req, '退货单');
 
   await transaction(async (conn) => {
     const order = await saleReturnModel.findByIdForUpdate(conn, id);
@@ -138,8 +133,7 @@ async function reject(req, res) {
 /* 取消退货申请（申请人或管理员）                                         */
 /* ------------------------------------------------------------------ */
 async function cancel(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少退货单 id');
+  const id = idParam(req, '退货单');
 
   await transaction(async (conn) => {
     const order = await saleReturnModel.findByIdForUpdate(conn, id);

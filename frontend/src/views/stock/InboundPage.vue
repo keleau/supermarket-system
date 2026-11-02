@@ -16,7 +16,10 @@ import { Download, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { getSupplierOptions } from '@/api/modules/supplier'
 import { createInbound, createOutbound, getInboundList, getOutboundList } from '@/api/modules/stock'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { usePagination } from '@/composables/usePagination'
 import { bizMeta, STOCK_BIZ_TYPES } from '@/constants/stock'
 import { formatInt, money } from '@/utils/format.js'
 
@@ -63,7 +66,7 @@ function productLabel(product) {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({
   productName: '',
@@ -111,17 +114,6 @@ function handleReset() {
   filterForm.bizType = ''
   filterForm.dateRange = []
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 onMounted(async () => {
@@ -316,9 +308,7 @@ async function handleSubmit() {
         <el-table-column prop="productName" label="商品名称" min-width="180" show-overflow-tooltip />
         <el-table-column label="业务类型" width="110" align="center">
           <template #default="{ row }">
-            <el-tag :type="bizMeta(row.bizType).tag" effect="light" round size="small">
-              {{ row.bizTypeName || bizMeta(row.bizType).label }}
-            </el-tag>
+            <StatusTag :meta="bizMeta(row.bizType)" :label="row.bizTypeName || bizMeta(row.bizType).label" />
           </template>
         </el-table-column>
         <el-table-column prop="quantity" :label="`${isInbound ? '入库' : '出库'}数量`" align="right" width="110">
@@ -359,14 +349,11 @@ async function handleSubmit() {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @current-change="handlePageChange"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>

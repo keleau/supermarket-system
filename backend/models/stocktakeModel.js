@@ -1,12 +1,7 @@
 /**
  * 库存盘点单 / 盘点明细 Model
  */
-const { pool, query } = require('../db/pool');
-
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
+const { query, run } = require('../db/pool');
 
 const ORDER_FIELDS = `
   id,
@@ -222,7 +217,6 @@ async function updateItemAtAudit(conn, itemId, bookQty, diffQty, costPrice, diff
 }
 
 module.exports = {
-  run,
   generateTakeNo,
   createOrder,
   createItems,

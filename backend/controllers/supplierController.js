@@ -3,7 +3,7 @@
  */
 const supplierModel = require('../models/supplierModel');
 const { ok, page } = require('../utils/result');
-const { toStr, toInt, paging, assert, isPhone } = require('../utils/validate');
+const { toStr, toInt, paging, assert, isPhone, idParam } = require('../utils/validate');
 
 /** 解析并校验供应商入参 */
 function buildPayload(body) {
@@ -72,8 +72,7 @@ async function update(req, res) {
 
 /* 4.4.5 删除供应商 */
 async function remove(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少供应商 id');
+  const id = idParam(req, '供应商');
 
   const exist = await supplierModel.findById(id);
   assert(exist, '供应商不存在');

@@ -10,6 +10,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, View } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { usePagination } from '@/composables/usePagination'
 import { getCategoryList } from '@/api/modules/product'
 import {
   getStocktakeList,
@@ -48,7 +51,7 @@ function statusMeta(status) {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 10 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList)
 
 const filterForm = reactive({ takeNo: '', status: '', dateRange: [] })
 const applied = reactive({ takeNo: '', status: '', startTime: '', endTime: '' })
@@ -85,17 +88,6 @@ function handleReset() {
   filterForm.status = ''
   filterForm.dateRange = []
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 onMounted(loadList)
@@ -352,9 +344,7 @@ async function handleCancel(row) {
         <el-table-column prop="takeNo" label="盘点单号" min-width="170" />
         <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusMeta(row.status).tag" effect="light" round size="small">
-              {{ statusMeta(row.status).label }}
-            </el-tag>
+            <StatusTag :meta="statusMeta(row.status)" />
           </template>
         </el-table-column>
         <el-table-column label="盘盈" width="110" align="right">
@@ -408,13 +398,13 @@ async function handleCancel(row) {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
-          :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next"
-          @current-change="handlePageChange"
+          :background="false"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>
@@ -444,9 +434,7 @@ async function handleCancel(row) {
         <template v-if="detail">
           <el-descriptions :column="3" border>
             <el-descriptions-item label="状态">
-              <el-tag :type="statusMeta(detail.status).tag" effect="light" round size="small">
-                {{ statusMeta(detail.status).label }}
-              </el-tag>
+              <StatusTag :meta="statusMeta(detail.status)" />
             </el-descriptions-item>
             <el-descriptions-item label="制单人">{{ detail.operator }}</el-descriptions-item>
             <el-descriptions-item label="审核人">{{ detail.auditor || '—' }}</el-descriptions-item>

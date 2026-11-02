@@ -12,7 +12,7 @@ const productModel = require('../models/productModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, toNum, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, toNum, round2, paging, assert, idParam, parseDateRange,
 } = require('../utils/validate');
 const { formatCompact } = require('../utils/date');
 const { calcItemAmount, calcTotal } = require('../utils/purchase');
@@ -88,9 +88,7 @@ async function list(req, res) {
   const status = toInt(req.query.status, null);
   if (status !== null) assert(STATUS_VALUES.includes(status), '采购状态取值不合法');
 
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   const result = await purchaseModel.list({
     pageNum,
@@ -99,8 +97,8 @@ async function list(req, res) {
     orderNo: toStr(req.query.orderNo) || null,
     supplierId: toInt(req.query.supplierId, null),
     status,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   });
 
   return ok(res, page(maskPurchaseFinance(result.list, req.user), result.total, pageNum, pageSize));
@@ -110,8 +108,7 @@ async function list(req, res) {
 /* 4.11.2 采购单详情                                                     */
 /* ------------------------------------------------------------------ */
 async function detail(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
 
   const order = await purchaseModel.findById(id);
   assert(order, '采购单不存在');
@@ -159,8 +156,7 @@ async function create(req, res) {
 /* 4.11.4 编辑采购草稿                                                   */
 /* ------------------------------------------------------------------ */
 async function update(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
 
   const payload = await buildPayload(req.body);
 
@@ -190,8 +186,7 @@ async function update(req, res) {
 /* 4.11.5 提交采购单                                                     */
 /* ------------------------------------------------------------------ */
 async function submit(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
 
   await transaction(async (conn) => {
     const order = await purchaseModel.findByIdForUpdate(conn, id);
@@ -221,8 +216,7 @@ async function submit(req, res) {
 /* 4.11.6 确认入库（仓管/管理员）                                        */
 /* ------------------------------------------------------------------ */
 async function receive(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
   const receiver = operatorName(req);
 
   await transaction(async (conn) => {
@@ -270,8 +264,7 @@ async function receive(req, res) {
 /* 4.11.7 取消采购单                                                     */
 /* ------------------------------------------------------------------ */
 async function cancel(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
 
   await transaction(async (conn) => {
     const order = await purchaseModel.findByIdForUpdate(conn, id);
@@ -298,8 +291,7 @@ async function cancel(req, res) {
 /* 4.11.8 登记付款（仅管理员）                                           */
 /* ------------------------------------------------------------------ */
 async function pay(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少采购单 id');
+  const id = idParam(req, '采购单');
 
   const amount = round2(toNum(req.body.amount, 0));
   assert(amount > 0, '付款金额必须大于 0');

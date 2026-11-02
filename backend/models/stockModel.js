@@ -1,14 +1,8 @@
 /**
  * 出入库流水 / 库存统计 Model
  */
-const { pool, query } = require('../db/pool');
+const { query, run } = require('../db/pool');
 const { formatDateTime } = require('../utils/date');
-
-/** 事务连接执行入口 */
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
 
 const LOG_FIELDS = `
   l.id,
@@ -230,6 +224,6 @@ async function inboundQuantityBetween(startTime, endTime) {
 }
 
 module.exports = {
-  run, logList, insertLog, hasInbound, buildWarnWhere, warnList, statistics,
+  logList, insertLog, hasInbound, buildWarnWhere, warnList, statistics,
   slowMoving, inboundQuantityBetween,
 };

@@ -54,6 +54,15 @@ async function execute(sql, params = []) {
 }
 
 /**
+ * 统一查询入口：传事务连接时走该连接，否则走连接池。
+ * Model 内部的查询统一用它，避免每个 model 各写一份。
+ */
+async function run(conn, sql, params = []) {
+  const [rows] = await (conn || pool).execute(sql, params);
+  return rows;
+}
+
+/**
  * 事务封装：回调内抛错自动回滚，正常返回自动提交
  * @param {(conn: import('mysql2/promise').PoolConnection) => Promise<any>} handler
  */
@@ -76,4 +85,4 @@ async function transaction(handler) {
   }
 }
 
-module.exports = { pool, query, execute, transaction };
+module.exports = { pool, query, execute, run, transaction };

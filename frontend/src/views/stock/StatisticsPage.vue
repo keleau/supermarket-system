@@ -13,6 +13,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Box, Warning, Goods, Money, DocumentChecked } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import ChartCard from '@/views/dashboard/components/ChartCard.vue'
 import { axisTextStyle, baseTooltip, cssVar, useEchart } from '@/composables/useEchart.js'
 import { getStockStatistics, getWarnList, getSlowMoving } from '@/api/modules/stock'
@@ -274,9 +276,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="状态" width="120" align="center">
           <template #default="{ row }">
-            <el-tag :type="warnMeta(row.warnStatus).tag" effect="light" round size="small">
-              {{ warnMeta(row.warnStatus).label }}
-            </el-tag>
+            <StatusTag :meta="warnMeta(row.warnStatus)" />
           </template>
         </el-table-column>
         <template #empty>
@@ -288,14 +288,10 @@ onMounted(() => {
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          v-model:current-page="pagination.pageNum"
+        <PagePagination
+          v-model:page-num="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :total="filteredWarnProducts.length"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-          @size-change="pagination.pageNum = 1"
         />
       </div>
     </section>

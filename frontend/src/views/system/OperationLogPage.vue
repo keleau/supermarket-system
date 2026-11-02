@@ -6,6 +6,8 @@
  */
 import { onMounted, reactive, ref } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import PagePagination from '@/components/PagePagination.vue'
+import { usePagination } from '@/composables/usePagination'
 import { getOperationLogList } from '@/api/modules/operationLog'
 
 const MODULES = {
@@ -34,7 +36,7 @@ const ACTION_OPTIONS = Object.entries(ACTIONS).map(([value, label]) => ({ value,
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const pagination = reactive({ pageNum: 1, pageSize: 20 })
+const { pagination, handlePageChange, handleSizeChange } = usePagination(loadList, { pageSize: 20 })
 
 const filterForm = reactive({
   module: '',
@@ -79,17 +81,6 @@ function handleReset() {
   filterForm.username = ''
   filterForm.dateRange = []
   handleQuery()
-}
-
-function handlePageChange(pageNum) {
-  pagination.pageNum = pageNum
-  loadList()
-}
-
-function handleSizeChange(pageSize) {
-  pagination.pageSize = pageSize
-  pagination.pageNum = 1
-  loadList()
 }
 
 function moduleLabel(value) {
@@ -180,13 +171,14 @@ onMounted(loadList)
       </el-table>
 
       <div class="table-foot">
-        <el-pagination
-          :current-page="pagination.pageNum"
+        <PagePagination
+          :page-num="pagination.pageNum"
           :page-size="pagination.pageSize"
           :total="total"
           :page-sizes="[20, 50, 100]"
           layout="total, sizes, prev, pager, next"
-          @current-change="handlePageChange"
+          :background="false"
+          @page-change="handlePageChange"
           @size-change="handleSizeChange"
         />
       </div>

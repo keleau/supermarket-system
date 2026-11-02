@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import PagePagination from '@/components/PagePagination.vue'
 import {
   addCategory,
   deleteCategory,
@@ -328,13 +329,10 @@ function goProductList(categoryId) {
       </el-table>
 
       <footer v-if="sortedCategories.length > pagination.pageSize" class="table-foot">
-        <el-pagination
-          v-model:current-page="pagination.pageNum"
+        <PagePagination
+          v-model:page-num="pagination.pageNum"
           v-model:page-size="pagination.pageSize"
           :total="sortedCategories.length"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
         />
       </footer>
     </section>

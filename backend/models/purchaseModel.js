@@ -1,12 +1,7 @@
 /**
  * 采购单 / 采购明细 Model
  */
-const { pool, query } = require('../db/pool');
-
-async function run(conn, sql, params = []) {
-  const [rows] = await (conn || pool).execute(sql, params);
-  return rows;
-}
+const { query, run } = require('../db/pool');
 
 const ORDER_FIELDS = `
   id,
@@ -204,7 +199,6 @@ async function registerPayment(conn, id, amount) {
 }
 
 module.exports = {
-  run,
   generateOrderNo,
   createOrder,
   createItems,

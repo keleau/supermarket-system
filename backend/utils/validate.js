@@ -88,6 +88,21 @@ function assert(condition, msg, code = 400) {
   if (!condition) throw new BizError(msg, code);
 }
 
+/** 解析路由参数 id（统一「缺少 xx id」文案） */
+function idParam(req, label = '记录') {
+  const id = toInt(req.params.id);
+  assert(id !== null, `缺少${label} id`);
+  return id;
+}
+
+/** 解析列表日期区间：空值不限，结束日自动补到 23:59:59 */
+function parseDateRange(query = {}) {
+  const startDate = toStr(query.startTime);
+  const endDate = toStr(query.endTime);
+  assertDateRange(startDate, endDate);
+  return { startTime: startOfDay(startDate), endTime: endOfDay(endDate) };
+}
+
 /**
  * 把 'YYYY-MM-DD' 或 'YYYY-MM-DD HH:mm:ss' 转成可直接拼进 SQL 的字符串
  * 结束时间若只给日期，自动补到当天 23:59:59
@@ -107,5 +122,5 @@ function endOfDay(v) {
 module.exports = {
   isBlank, toInt, toNum, toStr, round2, round4,
   isPhone, isIdCard, isUsername, isDate, assertDateRange,
-  paging, assert, startOfDay, endOfDay,
+  paging, assert, idParam, parseDateRange, startOfDay, endOfDay,
 };

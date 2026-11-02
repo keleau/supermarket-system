@@ -12,7 +12,7 @@ const stockModel = require('../models/stockModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, paging, assert, idParam, parseDateRange,
 } = require('../utils/validate');
 const { formatCompact } = require('../utils/date');
 const { maskStocktakeFinance } = require('../utils/finance');
@@ -32,9 +32,7 @@ async function list(req, res) {
   const status = toInt(req.query.status, null);
   if (status !== null) assert(STATUS_VALUES.includes(status), '盘点状态取值不合法');
 
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   const result = await stocktakeModel.list({
     pageNum,
@@ -42,8 +40,8 @@ async function list(req, res) {
     offset,
     takeNo: toStr(req.query.takeNo) || null,
     status,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   });
 
   return ok(res, page(maskStocktakeFinance(result.list, req.user), result.total, pageNum, pageSize));
@@ -53,8 +51,7 @@ async function list(req, res) {
 /* 4.8.2 盘点单详情                                                      */
 /* ------------------------------------------------------------------ */
 async function detail(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少盘点单 id');
+  const id = idParam(req, '盘点单');
 
   const order = await stocktakeModel.findById(id);
   assert(order, '盘点单不存在');
@@ -114,8 +111,7 @@ async function create(req, res) {
 /* 4.8.4 保存实盘数量                                                    */
 /* ------------------------------------------------------------------ */
 async function updateItems(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少盘点单 id');
+  const id = idParam(req, '盘点单');
 
   const items = Array.isArray(req.body.items) ? req.body.items : [];
   assert(items.length > 0, '请提交盘点明细');
@@ -159,8 +155,7 @@ async function updateItems(req, res) {
 /* 4.8.5 提交盘点单                                                      */
 /* ------------------------------------------------------------------ */
 async function submit(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少盘点单 id');
+  const id = idParam(req, '盘点单');
 
   await transaction(async (conn) => {
     const order = await stocktakeModel.findByIdForUpdate(conn, id);
@@ -195,8 +190,7 @@ async function submit(req, res) {
 /* 4.8.6 审核盘点单（仅管理员）                                          */
 /* ------------------------------------------------------------------ */
 async function audit(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少盘点单 id');
+  const id = idParam(req, '盘点单');
   const auditor = operatorName(req);
 
   await transaction(async (conn) => {
@@ -264,8 +258,7 @@ async function audit(req, res) {
 /* 4.8.7 取消盘点单                                                      */
 /* ------------------------------------------------------------------ */
 async function cancel(req, res) {
-  const id = toInt(req.params.id);
-  assert(id !== null, '缺少盘点单 id');
+  const id = idParam(req, '盘点单');
 
   await transaction(async (conn) => {
     const order = await stocktakeModel.findByIdForUpdate(conn, id);

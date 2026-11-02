@@ -8,7 +8,7 @@ const supplierModel = require('../models/supplierModel');
 const { transaction } = require('../db/pool');
 const { BizError, ok, page } = require('../utils/result');
 const {
-  toStr, toInt, toNum, round2, paging, assert, assertDateRange, startOfDay, endOfDay,
+  toStr, toInt, toNum, round2, paging, assert, parseDateRange,
 } = require('../utils/validate');
 const { applyInbound } = require('../services/inventoryService');
 const { maskStockLogPrice, maskStockStatistics } = require('../utils/finance');
@@ -19,9 +19,7 @@ const { operatorName } = require('../utils/operator');
 /** 解析流水列表的公共查询条件 */
 function logQuery(req, forcedChangeType = null) {
   const { pageNum, pageSize, offset } = paging(req.query);
-  const startDate = toStr(req.query.startTime);
-  const endDate = toStr(req.query.endTime);
-  assertDateRange(startDate, endDate);
+  const { startTime, endTime } = parseDateRange(req.query);
 
   const bizType = toInt(req.query.bizType, null);
   if (bizType !== null) assert(STOCK_BIZ_VALUES.includes(bizType), '业务类型取值不合法');
@@ -34,8 +32,8 @@ function logQuery(req, forcedChangeType = null) {
     productId: toInt(req.query.productId, null),
     changeType: forcedChangeType !== null ? forcedChangeType : toInt(req.query.changeType, null),
     bizType,
-    startTime: startOfDay(startDate),
-    endTime: endOfDay(endDate),
+    startTime,
+    endTime,
   };
 }
 
