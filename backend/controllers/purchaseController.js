@@ -20,13 +20,10 @@ const { maskPurchaseFinance } = require('../utils/finance');
 const { STOCK_BIZ } = require('../utils/stockBiz');
 const { applyInbound } = require('../services/inventoryService');
 const { writeLog } = require('../utils/operationLog');
+const { operatorName } = require('../utils/operator');
+const { retryOnDuplicate } = require('../utils/retry');
 
 const STATUS_VALUES = [0, 1, 2, 3];
-const MAX_RETRY = 3;
-
-function operatorName(req) {
-  return req.user.realName || req.user.username || '';
-}
 
 function assertOwner(order, req) {
   if (order.operator !== operatorName(req) && req.user.role !== 'admin') {
@@ -129,39 +126,33 @@ async function create(req, res) {
   const payload = await buildPayload(req.body);
   const operator = operatorName(req);
 
-  for (let attempt = 1; attempt <= MAX_RETRY; attempt += 1) {
-    try {
-      const created = await transaction(async (conn) => {
-        const orderNo = await purchaseModel.generateOrderNo(conn, formatCompact(new Date()));
-        const orderId = await purchaseModel.createOrder(conn, {
-          orderNo,
-          supplierId: payload.supplierId,
-          supplierName: payload.supplierName,
-          totalAmount: payload.totalAmount,
-          operator,
-          remark: payload.remark,
-        });
-        await purchaseModel.createItems(conn, orderId, payload.items);
+  const created = await retryOnDuplicate(
+    () => transaction(async (conn) => {
+      const orderNo = await purchaseModel.generateOrderNo(conn, formatCompact(new Date()));
+      const orderId = await purchaseModel.createOrder(conn, {
+        orderNo,
+        supplierId: payload.supplierId,
+        supplierName: payload.supplierName,
+        totalAmount: payload.totalAmount,
+        operator,
+        remark: payload.remark,
+      });
+      await purchaseModel.createItems(conn, orderId, payload.items);
 
-        await writeLog(conn, req, {
-          module: 'purchase',
-          action: 'create',
-          bizNo: orderNo,
-          afterStatus: 0,
-          detail: `创建采购单，供应商「${payload.supplierName}」，${payload.items.length} 个商品，金额 ${payload.totalAmount}`,
-        });
-
-        return { id: orderId, orderNo };
+      await writeLog(conn, req, {
+        module: 'purchase',
+        action: 'create',
+        bizNo: orderNo,
+        afterStatus: 0,
+        detail: `创建采购单，供应商「${payload.supplierName}」，${payload.items.length} 个商品，金额 ${payload.totalAmount}`,
       });
 
-      return ok(res, created);
-    } catch (err) {
-      if (err && err.code === 'ER_DUP_ENTRY' && attempt < MAX_RETRY) continue;
-      throw err;
-    }
-  }
+      return { id: orderId, orderNo };
+    }),
+    '采购单号生成冲突，请重试'
+  );
 
-  throw new BizError('采购单号生成冲突，请重试');
+  return ok(res, created);
 }
 
 /* ------------------------------------------------------------------ */

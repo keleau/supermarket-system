@@ -17,6 +17,7 @@ import { getProductOptions } from '@/api/modules/product'
 import { getSupplierOptions } from '@/api/modules/supplier'
 import { createInbound, createOutbound, getInboundList, getOutboundList } from '@/api/modules/stock'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { bizMeta, STOCK_BIZ_TYPES } from '@/constants/stock'
 import { formatInt, money } from '@/utils/format.js'
 
 const route = useRoute()
@@ -30,36 +31,10 @@ const pageTitle = computed(() => (isInbound.value ? '入库明细' : '出库明�
 /** 入库需要 stock:in，出库需要 stock:out；只读岗位看不到新增按钮 */
 const canCreate = computed(() => (isInbound.value ? userStore.can('stock:in') : userStore.can('stock:out')))
 
-/** 业务类型标签（与后端 bizType 契约一致） */
-const BIZ_TYPES = {
-  1: { label: '采购入库', tag: 'success' },
-  2: { label: '销售出库', tag: 'warning' },
-  3: { label: '销售退货', tag: 'info' },
-  4: { label: '盘点盘盈', tag: 'success' },
-  5: { label: '盘点盘亏', tag: 'danger' },
-  6: { label: '期初入库', tag: 'success' },
-  7: { label: '手工调整', tag: 'info' },
-  8: { label: '作废回补', tag: 'danger' },
-}
-
-function bizMeta(bizType) {
-  return BIZ_TYPES[bizType] || { label: '其他', tag: 'info' }
-}
-
 /** 入库/出库页只展示各自可能出现的业务类型 */
 const BIZ_OPTIONS = computed(() => {
-  const all = [
-    { value: 1, label: '采购入库' },
-    { value: 6, label: '期初入库' },
-    { value: 3, label: '销售退货' },
-    { value: 4, label: '盘点盘盈' },
-    { value: 2, label: '销售出库' },
-    { value: 5, label: '盘点盘亏' },
-    { value: 7, label: '手工调整' },
-    { value: 8, label: '作废回补' },
-  ]
   const allowed = isInbound.value ? [1, 6, 3, 4, 7, 8] : [2, 5, 7]
-  return all.filter((opt) => allowed.includes(opt.value))
+  return allowed.map((value) => ({ value, label: STOCK_BIZ_TYPES[value].label }))
 })
 
 /* ---------------- 选品与供应商下拉 ---------------- */

@@ -16,6 +16,7 @@ import { Aim, CircleCheckFilled, Search } from '@element-plus/icons-vue'
 import { getProductOptions } from '@/api/modules/product'
 import { createSaleRecord } from '@/api/modules/sale'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { money, round2 } from '@/utils/format.js'
 
 const router = useRouter()
 
@@ -130,14 +131,6 @@ function clearCart() {
 }
 
 /* ---------------- 金额汇总 ---------------- */
-
-function round2(value) {
-  return Math.round(value * 100) / 100
-}
-
-function money(value) {
-  return Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 const totalCount = computed(() => cart.value.reduce((sum, line) => sum + line.quantity, 0))
 const payable = computed(() => round2(cart.value.reduce((sum, line) => sum + line.salePrice * line.quantity, 0)))

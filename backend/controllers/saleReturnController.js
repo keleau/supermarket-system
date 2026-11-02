@@ -15,6 +15,8 @@ const {
 const { maskSaleItems } = require('../utils/finance');
 const { hasPermission } = require('../utils/permissions');
 const { writeLog } = require('../utils/operationLog');
+const { operatorName } = require('../utils/operator');
+const { retryOnDuplicate } = require('../utils/retry');
 const {
   RETURN_STATUS,
   RETURN_STATUS_VALUES,
@@ -22,12 +24,9 @@ const {
   canCancel,
 } = require('../utils/saleReturn');
 const {
-  operatorName,
   createReturnOrder,
   confirmReturnOrder,
 } = require('../services/saleReturnService');
-
-const MAX_RETRY = 3;
 
 /* ------------------------------------------------------------------ */
 /* 退货单分页列表                                                        */
@@ -89,19 +88,12 @@ async function create(req, res) {
 
   const remark = toStr(req.body.remark).slice(0, 200);
 
-  for (let attempt = 1; attempt <= MAX_RETRY; attempt += 1) {
-    try {
-      const created = await transaction((conn) =>
-        createReturnOrder(conn, req, { saleNo, remark })
-      );
-      return ok(res, created);
-    } catch (err) {
-      if (err && err.code === 'ER_DUP_ENTRY' && attempt < MAX_RETRY) continue;
-      throw err;
-    }
-  }
+  const created = await retryOnDuplicate(
+    () => transaction((conn) => createReturnOrder(conn, req, { saleNo, remark })),
+    '退货单号生成冲突，请重试'
+  );
 
-  throw new BizError('退货单号生成冲突，请重试');
+  return ok(res, created);
 }
 
 /* ------------------------------------------------------------------ */

@@ -17,6 +17,11 @@ export function formatInt(value) {
   return Number(value || 0).toLocaleString('zh-CN')
 }
 
+/** 金额格式化；null / undefined（如无权限查看的字段）显示为破折号 */
+export function moneyOrDash(value) {
+  return value === null || value === undefined ? '—' : money(value)
+}
+
 /** 毛利率（0-1 小数 → "38.6%"；销售额为 0 时返回 "0.0%"） */
 export function rateText(profit, saleAmount) {
   if (!saleAmount) return '0.0%'

@@ -2,6 +2,7 @@
  * 销售记录 / 销售明细 / 销售统计 Model
  */
 const { pool, query } = require('../db/pool');
+const { round2 } = require('../utils/validate');
 
 /** 事务连接执行入口 */
 async function run(conn, sql, params = []) {
@@ -392,11 +393,6 @@ async function hotProducts(startTime, endTime, limit = 5) {
     saleAmount: round2(r.saleAmount),
     saleQuantity: Number(r.saleQuantity) || 0,
   }));
-}
-
-/** 保留两位小数 */
-function round2(n) {
-  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
 module.exports = {

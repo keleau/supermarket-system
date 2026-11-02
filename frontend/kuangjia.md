@@ -1,4 +1,4 @@
-请生成Vue3+Vite前端整体项目框架，使用<script setup lang="ts">语法，Element Plus，vue-router，axios。
+请生成Vue3+Vite前端整体项目框架，使用<script setup lang="js">语法，Element Plus，vue-router，axios。
 只搭建前端骨架，views下只创建空页面占位，不写页面内表格、弹窗等详细业务代码，后续单独开发页面。可使用any简化类型，不强制复杂TS类型定义。
 【约定：后端使用Node.js开发，前端定义好接口契约，为Node后端留出完整开发空间】
 【要求：main.ts中全局引入Element Plus组件库】

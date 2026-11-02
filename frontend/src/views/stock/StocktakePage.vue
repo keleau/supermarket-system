@@ -20,7 +20,7 @@ import {
   auditStocktake,
   cancelStocktake,
 } from '@/api/modules/stocktake'
-import { formatInt, money } from '@/utils/format.js'
+import { formatInt, money, moneyOrDash } from '@/utils/format.js'
 
 const userStore = useUserStore()
 const canCreate = computed(() => userStore.can('stocktake:create'))
@@ -299,10 +299,6 @@ async function handleCancel(row) {
   } finally {
     actionLoading.value = ''
   }
-}
-
-function moneyOrDash(value) {
-  return value === null || value === undefined ? '—' : money(value)
 }
 </script>
 

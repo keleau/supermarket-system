@@ -15,17 +15,13 @@ const { BizError } = require('../utils/result');
 const { STOCK_BIZ } = require('../utils/stockBiz');
 const { hasPermission } = require('../utils/permissions');
 const { writeLog } = require('../utils/operationLog');
+const { operatorName } = require('../utils/operator');
 const { formatCompact } = require('../utils/date');
 const {
   RETURN_STATUS,
   buildReturnItems,
   calcReturnTotals,
 } = require('../utils/saleReturn');
-
-/** 操作人一律从 token 解析 */
-function operatorName(req) {
-  return req.user.realName || req.user.username || '';
-}
 
 /**
  * 回补库存并写流水（退货确认 / 销售作废共用）
@@ -183,7 +179,6 @@ async function confirmReturnOrder(conn, req, returnId) {
 }
 
 module.exports = {
-  operatorName,
   restoreStock,
   createReturnOrder,
   confirmReturnOrder,

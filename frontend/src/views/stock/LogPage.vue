@@ -10,42 +10,12 @@ import { ElMessage } from 'element-plus'
 import { Search, Refresh, Download } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { getStockLogList } from '@/api/modules/stock'
+import { bizMeta, changeMeta, STOCK_BIZ_OPTIONS } from '@/constants/stock'
 import { downloadCsv } from '@/utils/csv.js'
 import { formatInt } from '@/utils/format.js'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
-
-/** 流水类型标签（1 入库 2 出库，与后端 changeType 契约一致） */
-const CHANGE_TYPES = {
-  1: { label: '入库', tag: 'success' },
-  2: { label: '出库', tag: 'warning' },
-}
-
-function changeMeta(changeType) {
-  return CHANGE_TYPES[changeType] || { label: '未知', tag: 'info' }
-}
-
-/** 业务类型标签（与后端 bizType 契约一致） */
-const BIZ_TYPES = {
-  1: { label: '采购入库', tag: 'success' },
-  2: { label: '销售出库', tag: 'warning' },
-  3: { label: '销售退货', tag: 'info' },
-  4: { label: '盘点盘盈', tag: 'success' },
-  5: { label: '盘点盘亏', tag: 'danger' },
-  6: { label: '期初入库', tag: 'success' },
-  7: { label: '手工调整', tag: 'info' },
-  8: { label: '作废回补', tag: 'danger' },
-}
-
-const BIZ_OPTIONS = Object.entries(BIZ_TYPES).map(([value, meta]) => ({
-  value: Number(value),
-  label: meta.label,
-}))
-
-function bizMeta(bizType) {
-  return BIZ_TYPES[bizType] || { label: '其他', tag: 'info' }
-}
 
 /* ---------------- 列表（服务端分页） ---------------- */
 
@@ -142,7 +112,7 @@ function exportLogs() {
     list.value.map((l) => [
       l.createTime,
       l.productName,
-      CHANGE_TYPES[l.changeType]?.label || '未知',
+      changeMeta(l.changeType).label,
       l.bizTypeName || bizMeta(l.bizType).label,
       l.quantity,
       l.beforeNum,
@@ -178,7 +148,7 @@ function exportLogs() {
         </el-form-item>
         <el-form-item label="业务类型">
           <el-select v-model="filterForm.bizType" placeholder="全部" clearable style="width: 130px">
-            <el-option v-for="opt in BIZ_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+            <el-option v-for="opt in STOCK_BIZ_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="日期">

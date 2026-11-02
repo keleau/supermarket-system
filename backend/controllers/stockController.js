@@ -14,11 +14,7 @@ const { applyInbound } = require('../services/inventoryService');
 const { maskStockLogPrice, maskStockStatistics } = require('../utils/finance');
 const { STOCK_BIZ, STOCK_BIZ_VALUES } = require('../utils/stockBiz');
 const { writeLog } = require('../utils/operationLog');
-
-/** 操作人一律从 token 解析，不接受前端传值（防伪造） */
-function operatorName(req) {
-  return req.user.realName || req.user.username || '';
-}
+const { operatorName } = require('../utils/operator');
 
 /** 解析流水列表的公共查询条件 */
 function logQuery(req, forcedChangeType = null) {

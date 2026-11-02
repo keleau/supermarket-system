@@ -23,6 +23,7 @@ import { getSupplierOptions } from '@/api/modules/supplier'
 import { getStockLogList } from '@/api/modules/stock'
 import { getSaleItemList } from '@/api/modules/sale'
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner'
+import { changeMeta } from '@/constants/stock'
 import { downloadCsv } from '@/utils/csv.js'
 import { formatInt, money } from '@/utils/format.js'
 
@@ -328,12 +329,6 @@ const detailSummary = computed(() => {
   const sold = detailSaleItems.value.reduce((s, item) => s + Number(item.quantity || 0), 0)
   return { inbound, outbound, sold }
 })
-
-function changeMeta(changeType) {
-  return changeType === 1
-    ? { label: '入库', tag: 'success' }
-    : { label: '出库', tag: 'warning' }
-}
 
 async function openDetail(row) {
   detailProduct.value = row

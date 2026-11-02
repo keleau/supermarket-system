@@ -21,7 +21,7 @@ import {
   cancelPurchase,
   payPurchase,
 } from '@/api/modules/purchase'
-import { formatInt, money, round2 } from '@/utils/format.js'
+import { formatInt, money, moneyOrDash, round2 } from '@/utils/format.js'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.isAdmin)
@@ -381,11 +381,6 @@ async function openDetail(row) {
 async function refreshAfterAction(id) {
   await loadList()
   if (detailVisible.value && detail.value?.id === id) await loadDetail(id)
-}
-
-/** 仓管看不到采购金额，接口会直接不返回该字段 */
-function moneyOrDash(value) {
-  return value === null || value === undefined ? '—' : money(value)
 }
 
 /* ---------------- 登记付款 ---------------- */

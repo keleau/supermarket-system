@@ -19,13 +19,10 @@ const { maskStocktakeFinance } = require('../utils/finance');
 const { calcDiff } = require('../utils/stocktake');
 const { STOCK_BIZ } = require('../utils/stockBiz');
 const { writeLog } = require('../utils/operationLog');
+const { operatorName } = require('../utils/operator');
+const { retryOnDuplicate } = require('../utils/retry');
 
 const STATUS_VALUES = [0, 1, 2, 3];
-const MAX_RETRY = 3;
-
-function operatorName(req) {
-  return req.user.realName || req.user.username || '';
-}
 
 /* ------------------------------------------------------------------ */
 /* 4.8.1 盘点单分页列表                                                  */
@@ -73,50 +70,44 @@ async function create(req, res) {
   const remark = toStr(req.body.remark).slice(0, 200);
   const operator = operatorName(req);
 
-  for (let attempt = 1; attempt <= MAX_RETRY; attempt += 1) {
-    try {
-      const created = await transaction(async (conn) => {
-        const products = await stocktakeModel.findSnapshotProducts(conn, categoryId);
-        if (!products.length) throw new BizError('该范围内没有可盘点的商品');
+  const created = await retryOnDuplicate(
+    () => transaction(async (conn) => {
+      const products = await stocktakeModel.findSnapshotProducts(conn, categoryId);
+      if (!products.length) throw new BizError('该范围内没有可盘点的商品');
 
-        const takeNo = await stocktakeModel.generateTakeNo(conn, formatCompact(new Date()));
-        const orderId = await stocktakeModel.createOrder(conn, { takeNo, operator, remark });
+      const takeNo = await stocktakeModel.generateTakeNo(conn, formatCompact(new Date()));
+      const orderId = await stocktakeModel.createOrder(conn, { takeNo, operator, remark });
 
-        await stocktakeModel.createItems(
-          conn,
-          orderId,
-          products.map((p) => {
-            const bookQty = Number(p.stockNum) || 0;
-            return {
-              productId: p.id,
-              productName: p.productName,
-              unit: p.unit || '个',
-              bookQty,
-              actualQty: bookQty,
-              costPrice: Number(p.costPrice) || 0,
-            };
-          })
-        );
+      await stocktakeModel.createItems(
+        conn,
+        orderId,
+        products.map((p) => {
+          const bookQty = Number(p.stockNum) || 0;
+          return {
+            productId: p.id,
+            productName: p.productName,
+            unit: p.unit || '个',
+            bookQty,
+            actualQty: bookQty,
+            costPrice: Number(p.costPrice) || 0,
+          };
+        })
+      );
 
-        await writeLog(conn, req, {
-          module: 'stocktake',
-          action: 'create',
-          bizNo: takeNo,
-          afterStatus: 0,
-          detail: `创建盘点任务，商品 ${products.length} 个`,
-        });
-
-        return { id: orderId, takeNo };
+      await writeLog(conn, req, {
+        module: 'stocktake',
+        action: 'create',
+        bizNo: takeNo,
+        afterStatus: 0,
+        detail: `创建盘点任务，商品 ${products.length} 个`,
       });
 
-      return ok(res, created);
-    } catch (err) {
-      if (err && err.code === 'ER_DUP_ENTRY' && attempt < MAX_RETRY) continue;
-      throw err;
-    }
-  }
+      return { id: orderId, takeNo };
+    }),
+    '盘点单号生成冲突，请重试'
+  );
 
-  throw new BizError('盘点单号生成冲突，请重试');
+  return ok(res, created);
 }
 
 /* ------------------------------------------------------------------ */

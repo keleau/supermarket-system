@@ -11,6 +11,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { graphic } from 'echarts/core'
 import { useRouter } from 'vue-router'
 import { cssVar, hexToRgba, lighten, preferReducedMotion, useEchart } from '@/composables/useEchart'
+import { money } from '@/utils/format.js'
 
 const props = defineProps({
   /** 结构：{ sale: {amount, rate, trend}, profit: {amount, rate, trend} } */
@@ -44,11 +45,6 @@ function switchPeriod(next) {
 function goSale() {
   if (!props.canViewSales) return
   router.push({ path: '/sale/record', query: { range: period.value } })
-}
-
-/** 金额格式化：千分位 + 两位小数 */
-function money(value) {
-  return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /* ---------------- 数字滚动补间：切换周期时金额平滑过渡 ---------------- */
