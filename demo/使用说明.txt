@@ -1,13 +1,17 @@
 超市管家演示包 · 使用说明
 ==============================
 
+说明：下文中的 app\backend\.env 等路径，都是相对于解压后的演示包根目录
+（即 start-demo.bat 所在目录）；不是项目源码根目录。
+
 一、首次使用
 1. 解压到任意目录（路径尽量不要含特殊符号）。
 2. 确认学校电脑的 MySQL 服务已启动，端口默认 3306。
 3. 双击 start-demo.bat。
-4. 首次运行会打开 app\backend\.env：
+4. 首次运行会把 app\backend\.env.demo 复制为 app\backend\.env 并打开：
    - 默认 DB_USER=root，DB_PASSWORD=123456
    - 如果学校 MySQL 密码不同，请修改后保存并关闭记事本。
+   - 也可以提前编辑 app\backend\.env.demo，首次启动会自动复制。
 5. 启动器会自动创建演示库 supermarket_demo、建 14 张表、写入演示账号和商品数据。
 6. 浏览器会自动打开 http://localhost:3000。
 

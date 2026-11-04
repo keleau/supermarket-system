@@ -94,9 +94,12 @@ async function main() {
   await copyFile(process.execPath, path.join(STAGE_DIR, 'runtime', 'node.exe'));
 
   log('复制启动脚本...');
-  for (const file of ['start-demo.bat', 'stop-demo.bat', 'reset-demo.bat', '配置数据库.bat', '使用说明.txt']) {
+  // demo/start-demo.bat 只用于仓库模板转去 release 包；
+  // 正式包使用不含模板判断的 start-demo.package.bat，避免批处理解析误判。
+  for (const file of ['stop-demo.bat', 'reset-demo.bat', '配置数据库.bat', '使用说明.txt']) {
     await copyFile(path.join(DEMO_TEMPLATE_DIR, file), path.join(STAGE_DIR, file));
   }
+  await copyFile(path.join(DEMO_TEMPLATE_DIR, 'start-demo.package.bat'), path.join(STAGE_DIR, 'start-demo.bat'));
 
   log('生成首次运行配置...');
   const envTemplate = fs.readFileSync(path.join(DEMO_TEMPLATE_DIR, 'env.demo.template'), 'utf8');

@@ -3,22 +3,16 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-if not exist "app\backend\.env" (
-  copy "app\backend\.env.demo" "app\backend\.env" >nul
-  echo.
-  echo 首次运行：请确认 MySQL 地址、账号、密码，保存后关闭记事本。
-  start /wait notepad "app\backend\.env"
+if exist "%~dp0..\release\超市管家-演示包\start-demo.bat" (
+  echo 正在启动已生成的演示包...
+  call "%~dp0..\release\超市管家-演示包\start-demo.bat"
+  exit /b %errorlevel%
 )
 
-cd /d "%~dp0app\backend"
-if exist "%~dp0runtime\node.exe" (
-  "%~dp0runtime\node.exe" scripts\demoLauncher.js
-) else (
-  node scripts\demoLauncher.js
-)
-
-if errorlevel 1 (
-  echo.
-  echo 启动失败：请根据上面的提示修改后重新双击 start-demo.bat。
-  pause
-)
+echo.
+echo 当前 demo 目录是演示包模板，不能直接启动。
+echo 请先在项目根目录执行：node scripts\package-demo.js
+echo 然后双击 release\超市管家-演示包\start-demo.bat
+echo.
+pause
+exit /b 1

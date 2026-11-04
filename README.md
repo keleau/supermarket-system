@@ -176,7 +176,9 @@ MySQL（14 张业务表）
 │   └── vite.config.js
 ├── .github/workflows/             # CI：后端测试 + MySQL 冒烟
 ├── docs/assets/screenshots/       # README 页面截图
-├── scripts/                       # 离线演示包相关脚本
+├── demo/                          # 演示包模板（启动脚本、环境变量模板）
+├── release/                       # 本机生成的演示包（gitignored）
+├── scripts/                       # package-demo.js 等脚本
 └── README.md
 ```
 
@@ -380,11 +382,17 @@ CORS_ORIGINS=http://你的域名或IP:3000
 
 ### Windows 离线演示包
 
-如果本机已有 `release/超市管家-演示包/`（该目录未纳入 Git），可直接双击 `start-demo.bat`：
+`demo/` 是演示包模板，**不能直接双击运行**。先在项目根目录生成可运行包：
+
+```bash
+node scripts/package-demo.js
+```
+
+生成完成后双击 `release/超市管家-演示包/start-demo.bat`。如果本机已经生成过该目录，直接运行后者即可；在仓库内双击 `demo/start-demo.bat` 也会自动转去 release 包。
 
 - 自带便携 `node.exe`，不要求演示机安装 Node；
 - 自动创建 `supermarket_demo` 数据库、14 张表和演示账号；
-- 首次启动会打开 `app/backend/.env` 供核对 MySQL 密码；
+- 首次启动会把包内 `app\backend\.env.demo` 复制为 `.env` 并打开（脚本内部使用绝对路径），供核对 MySQL 密码；也可提前编辑 `.env.demo`；
 - 停止服务使用 `stop-demo.bat`，重置演示数据使用 `reset-demo.bat`。
 
 > 演示包面向 Windows x64，且要求演示机已启动 MySQL。详细说明见包内 `使用说明.txt`。
@@ -415,7 +423,7 @@ CORS_ORIGINS=http://你的域名或IP:3000
 - **采购付款**：应付金额保存在采购单上，只记录累计已付金额，没有独立付款流水表。
 - **基础资料**：没有会员、优惠券、线上支付、电商订单、批次/保质期/序列号管理。
 - **部署形态**：未提供 Docker、云数据库、对象存储和完整运维脚本；离线演示包为 Windows x64。
-- **旧打包脚本**：`scripts/package-demo.js` 依赖的 `demo/` 模板目录已从仓库移除，重新生成演示包前需要恢复模板；现有 `release/` 演示包可继续使用。
+- **演示包目录**：`demo/` 只是模板，实际运行的是 `release/超市管家-演示包/`；重新生成使用 `node scripts/package-demo.js`。
 
 ## 开发约定
 
