@@ -18,7 +18,7 @@
 | 快速入口 | 位置 |
 | --- | --- |
 | 页面截图 | [查看界面截图](#界面截图) |
-| 演示视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（2 分 10 秒，7.8 MB） |
+| 演示视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB） |
 | 接口契约 | [backend/api.md](backend/api.md) |
 | 测试与 CI | [测试与质量保障](#测试与质量保障) |
 
@@ -66,7 +66,7 @@
 
 ### 演示视频
 
-[▶ 查看演示视频](docs/assets/demo.mp4)（1920×1200，2 分 10 秒，7.8 MB，无音频）
+[▶ 查看演示视频](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频）
 
 > 在 GitHub 上点击链接可直接在线播放；本地克隆后双击 `docs/assets/demo.mp4` 也能播放。
 
