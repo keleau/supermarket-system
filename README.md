@@ -1,6 +1,6 @@
 # 超市管家 · 超市商品后台管理系统
 
-[![Backend Tests](https://github.com/keleau/supermarket/actions/workflows/backend-test.yml/badge.svg?branch=main)](https://github.com/keleau/supermarket/actions/workflows/backend-test.yml)
+[![Backend Tests](https://github.com/keleau/supermarket-system/actions/workflows/backend-test.yml/badge.svg?branch=main)](https://github.com/keleau/supermarket-system/actions/workflows/backend-test.yml)
 
 面向单店超市的进销存后台管理系统，覆盖商品档案、库存、采购、销售、退货、盘点、供应商、经营分析和系统管理。前后端分离：前端使用 Vue 3 + Vite + Element Plus，后端使用 Node.js + Express 5 + MySQL。
 
@@ -18,7 +18,8 @@
 | 快速入口 | 位置 |
 | --- | --- |
 | 页面截图 | [查看界面截图](#界面截图) |
-| 演示视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB） |
+| 演示预览 | [▶ 点击直接观看 12 秒 GIF](docs/assets/previews/demo.gif) |
+| 完整视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB，下载） |
 | 接口契约 | [backend/api.md](backend/api.md) |
 | 测试与 CI | [测试与质量保障](#测试与质量保障) |
 
@@ -64,11 +65,17 @@
 | <img src="docs/assets/screenshots/07-operation-log.png" width="100%" alt="操作日志"> | <img src="docs/assets/screenshots/08-stock-statistics.png" width="100%" alt="库存统计"> |
 | **操作日志**：关键动作、单据号、状态变化、操作人和 IP 留痕。 | **库存统计**：库存总量、分类占比、预警商品和积压商品。 |
 
-### 演示视频
+### 演示预览（GIF 直接播放）
 
-[▶ 查看演示视频](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频）
+<p align="center">
+  <a href="docs/assets/previews/demo.gif"><img src="docs/assets/previews/demo.gif" alt="超市管家演示预览" width="860"></a>
+</p>
 
-> 在 GitHub 上点击链接可直接在线播放；本地克隆后双击 `docs/assets/demo.mp4` 也能播放。
+> 上方为 12 秒 GIF 节选，点击图片可查看完整尺寸；由真实运行录屏生成，不是设计稿。
+>
+> 完整演示视频：[docs/assets/demo.mp4](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频，下载后播放）。
+>
+> Gitee 不支持 MP4 在线播放，因此这里提供 GIF 直接预览 + 完整视频下载。
 
 ## 功能模块
 
