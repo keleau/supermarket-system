@@ -6,6 +6,8 @@
 
 > 项目定位：课程设计 / 毕业设计项目。重点实现完整的业务闭环、事务一致性、权限隔离和可验证的测试链路；不包含会员营销、线上支付、多门店等商业系统能力。
 
+**仓库：** [Gitee](https://gitee.com/keleau/supermarket-system) · [GitHub 镜像](https://github.com/keleau/supermarket-system)
+
 <p align="center">
   <img src="docs/assets/screenshots/01-dashboard.png" alt="超市管家运营总览" width="100%">
 </p>
@@ -23,7 +25,7 @@
 | --- | --- |
 | 页面截图 | [查看界面截图](#界面截图) |
 | 演示预览 | [▶ 点击直接观看 12 秒 GIF](docs/assets/previews/demo.gif) |
-| 完整视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB，需下载后播放） |
+| 完整视频 | [GitHub 文件页](https://github.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/raw/main/docs/assets/demo.mp4)（1 分 27 秒，8.6 MB） |
 | 接口契约 | [backend/api.md](backend/api.md) |
 | 测试与 CI | [测试与质量保障](#测试与质量保障) |
 
@@ -77,9 +79,9 @@
 
 > 上方为 12 秒 GIF 节选，点击图片可查看完整尺寸；由真实运行录屏生成，不是设计稿。
 >
-> 完整演示视频：[docs/assets/demo.mp4](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频，需下载后播放）。
+> 完整演示视频：[GitHub 文件页](https://github.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/raw/main/docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频）。
 >
-> Gitee 不支持 MP4 在线播放，因此这里提供 GIF 直接预览 + 完整视频（需下载）。
+> GIF 可直接播放；GitHub 文件页对 MP4 只提供文件/下载入口，Gitee 的 MP4 需下载后观看。
 
 ## 功能模块
 
