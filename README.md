@@ -25,7 +25,7 @@
 | --- | --- |
 | 页面截图 | [查看界面截图](#界面截图) |
 | 演示预览 | [▶ 点击直接观看 12 秒 GIF](docs/assets/previews/demo.gif) |
-| 完整视频 | [GitHub 文件页](https://github.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4)（1 分 27 秒，8.6 MB） |
+| 完整视频 | [GitHub 在线观看](https://keleau.github.io/supermarket-system/video.html) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4)（1 分 27 秒，8.6 MB） |
 | 接口契约 | [backend/api.md](backend/api.md) |
 | 测试与 CI | [测试与质量保障](#测试与质量保障) |
 
@@ -79,9 +79,9 @@
 
 > 上方为 12 秒 GIF 节选，点击图片可查看完整尺寸；由真实运行录屏生成，不是设计稿。
 >
-> 完整演示视频：[GitHub 文件页](https://github.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频）。
+> 完整演示视频：[GitHub 在线观看](https://keleau.github.io/supermarket-system/video.html) · [Gitee（需下载后观看）](https://gitee.com/keleau/supermarket-system/blob/main/docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频）。
 >
-> GIF 可直接播放；GitHub 文件页对 MP4 只提供文件/下载入口，Gitee 的 MP4 需下载后观看。
+> GIF 可直接播放；GitHub Pages 可在线观看完整视频，Gitee 的 MP4 需下载后观看。
 
 ## 功能模块
 
