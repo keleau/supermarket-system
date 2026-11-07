@@ -19,7 +19,7 @@
 | --- | --- |
 | 页面截图 | [查看界面截图](#界面截图) |
 | 演示预览 | [▶ 点击直接观看 12 秒 GIF](docs/assets/previews/demo.gif) |
-| 完整视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB，下载） |
+| 完整视频 | [docs/assets/demo.mp4](docs/assets/demo.mp4)（1 分 27 秒，8.6 MB，需下载后播放） |
 | 接口契约 | [backend/api.md](backend/api.md) |
 | 测试与 CI | [测试与质量保障](#测试与质量保障) |
 
@@ -73,9 +73,9 @@
 
 > 上方为 12 秒 GIF 节选，点击图片可查看完整尺寸；由真实运行录屏生成，不是设计稿。
 >
-> 完整演示视频：[docs/assets/demo.mp4](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频，下载后播放）。
+> 完整演示视频：[docs/assets/demo.mp4](docs/assets/demo.mp4)（1920×1200，1 分 27 秒，8.6 MB，含音频，需下载后播放）。
 >
-> Gitee 不支持 MP4 在线播放，因此这里提供 GIF 直接预览 + 完整视频下载。
+> Gitee 不支持 MP4 在线播放，因此这里提供 GIF 直接预览 + 完整视频（需下载）。
 
 ## 功能模块
 
